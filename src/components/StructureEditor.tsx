@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDownToLine, Check, ChevronDown, Eraser, Hexagon, Move, PencilLine, PencilRuler, Redo2, Sparkles, Undo2, X } from 'lucide-react'
-import { addEditorBond, addEditorRing, layoutEditorGraph, parseEditorSmiles, removeEditorAtom, removeEditorBond, serializeEditorGraph } from '../lib/moleculeEditor'
+import { ArrowDownToLine, Check, ChevronDown, Eraser, Move, PencilLine, PencilRuler, Redo2, Sparkles, Undo2, X } from 'lucide-react'
+import { getEditorBondLines } from '../lib/bondGeometry'
+import { addEditorBond, addEditorRing, getEditorExtensionPoint, layoutEditorGraph, parseEditorSmiles, removeEditorAtom, removeEditorBond, serializeEditorGraph } from '../lib/moleculeEditor'
 import type { EditorAtom, EditorGraph } from '../lib/moleculeEditor'
 import '../styles/structure-editor.css'
 
@@ -20,6 +21,7 @@ const EMPTY_GRAPH: EditorGraph = { atoms: [], bonds: [] }
 const MAIN_TOOLS: { value: Tool; label: string }[] = [{ value: 'bond', label: '画键' }, { value: 'O', label: 'O 氧' }, { value: 'N', label: 'N 氮' }, { value: 'benzene', label: '苯环' }, { value: 'erase', label: '橡皮' }]
 const MORE_TOOLS: { value: Tool; label: string }[] = [{ value: 'C', label: 'C 碳' }, { value: 'S', label: 'S 硫' }, { value: 'Mg', label: 'Mg 镁' }, { value: 'Br', label: 'Br 溴' }, { value: 'Cl', label: 'Cl 氯' }, { value: 'F', label: 'F 氟' }, { value: 'I', label: 'I 碘' }, { value: 'P', label: 'P 磷' }, { value: 'N+', label: 'N⁺ 带正电氮' }, { value: 'O-', label: 'O⁻ 带负电氧' }, { value: 'ring3', label: '三元环' }, { value: 'ring6', label: '六元环' }, { value: 'move', label: '移动原子' }]
 const TOOL_HELP: Record<string, string> = { bond: '点空白处开始画碳链；点端点延长，点已有键切换单／双／三键。拖动可连接两个原子。', erase: '点原子或化学键删除；删错了可以撤销。', move: '拖动原子调整位置，分子的连接关系不变。', benzene: '点空白处放入苯环，点原子可接上一个苯环。', ring3: '点空白处放入三元环，再用 O 替换一个顶点即可画环氧基。', ring6: '点空白处放入六元环，点原子可接上一个环。' }
+const BENZENE_ICON = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m12 2 8.66 5v10L12 22l-8.66-5V7Z" /><path d="m12.8 5.6 4.34 2.5m0 7.8-4.34 2.5M6.5 14.5v-5" /></svg>
 
 function structureError(error: unknown): string {
   const message = String(error)
@@ -36,23 +38,6 @@ function nearestAtom(graph: EditorGraph, point: Point, exclude = -1): number {
     if (index !== exclude && current < distance) { result = index; distance = current }
   })
   return result
-}
-
-function extensionPoint(graph: EditorGraph, index: number): Point {
-  const atom = graph.atoms[index]
-  const neighbours = graph.bonds.filter(bond => bond.from === index || bond.to === index).map(bond => graph.atoms[bond.from === index ? bond.to : bond.from])
-  const angles = [-Math.PI / 6, Math.PI / 6, -Math.PI / 2, Math.PI / 2, -5 * Math.PI / 6, 5 * Math.PI / 6, 0, Math.PI]
-  let best = { x: atom.x + 38, y: atom.y - 22 }
-  let bestScore = -Infinity
-  for (const angle of angles) {
-    const point = { x: atom.x + Math.cos(angle) * 44, y: atom.y + Math.sin(angle) * 44 }
-    if (point.x < 20 || point.x > 620 || point.y < 24 || point.y > 336) continue
-    const separation = Math.min(88, ...graph.atoms.filter((_, current) => current !== index).map(other => Math.hypot(other.x - point.x, other.y - point.y)))
-    const angleScore = neighbours.length === 1 ? -Math.abs(Math.cos(angle - Math.atan2(neighbours[0].y - atom.y, neighbours[0].x - atom.x)) + .5) * 20 : 0
-    const score = separation + angleScore
-    if (score > bestScore) { best = point; bestScore = score }
-  }
-  return best
 }
 
 function atomLabel(atom: EditorAtom, index: number, graph: EditorGraph): { text: string; hydrogens: number; charge: string } {
@@ -183,7 +168,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
     if (bond >= 0) {
       commit({ ...graph, bonds: graph.bonds.map((current, index) => index === bond ? { ...current, order: current.order >= 3 ? 1 : current.order + 1 } : current) })
     } else if (atom >= 0) {
-      const nextPoint = extensionPoint(graph, atom)
+      const nextPoint = getEditorExtensionPoint(graph, atom)
       const next = { ...graph, atoms: [...graph.atoms, { ...nextPoint, element: 'C', charge: 0 }] }
       commit(addEditorBond(next, atom, next.atoms.length - 1))
     } else {
@@ -249,18 +234,14 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
   return createPortal(<div className="structure-editor-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) onClose() }}>
     <div className="structure-editor-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={helpId} ref={dialogRef} tabIndex={-1}>
       <header className="structure-editor-header"><div className="structure-editor-title-icon"><PencilRuler size={21} strokeWidth={1.5} /></div><div><span>简易分子画板</span><h2 id={titleId}>{title}</h2></div><button className="structure-editor-close" aria-label="关闭分子绘图" onClick={onClose}><X size={21} /></button></header>
-      <div className="simple-editor-toolbar" role="group" aria-label="分子绘图工具">{MAIN_TOOLS.map(item => <button key={item.value} type="button" aria-pressed={tool === item.value} className={tool === item.value ? 'selected' : ''} onClick={() => setTool(item.value)}>{item.value === 'bond' ? <PencilLine size={16} /> : item.value === 'benzene' ? <Hexagon size={16} /> : item.value === 'erase' ? <Eraser size={16} /> : null}{item.label}</button>)}<select aria-label="更多原子和环工具" value={MORE_TOOLS.some(item => item.value === tool) ? tool : ''} onChange={event => setTool(event.target.value as Tool)}><option value="" disabled>更多…</option>{MORE_TOOLS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+      <div className="simple-editor-toolbar" role="group" aria-label="分子绘图工具">{MAIN_TOOLS.map(item => <button key={item.value} type="button" aria-pressed={tool === item.value} className={tool === item.value ? 'selected' : ''} onClick={() => setTool(item.value)}>{item.value === 'bond' ? <PencilLine size={16} /> : item.value === 'benzene' ? BENZENE_ICON : item.value === 'erase' ? <Eraser size={16} /> : null}{item.label}</button>)}<select aria-label="更多原子和环工具" value={MORE_TOOLS.some(item => item.value === tool) ? tool : ''} onChange={event => setTool(event.target.value as Tool)}><option value="" disabled>更多…</option>{MORE_TOOLS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
       <p className="simple-editor-instruction" id={helpId}>{TOOL_HELP[tool] ?? `点已有原子替换成 ${tool}，也可点空白处放入，再用“画键”连接。`}</p>
       <div className="structure-editor-canvas-frame"><svg ref={svgRef} className={`simple-molecule-canvas tool-${tool}`} viewBox={viewBox} role="group" aria-label="键线式分子绘图画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { gestureRef.current = null; setPreview(null) }}>
         {!graph.atoms.length ? <g className="simple-canvas-empty" pointerEvents="none"><PencilLine x="302" y="132" width="36" height="36" strokeWidth="1.2" /><text x="320" y="203" textAnchor="middle" fontSize={15 * labelScale}>点一下这里，开始画碳链</text></g> : null}
         {graph.bonds.map((bond, index) => {
           const from = graph.atoms[bond.from]
           const to = graph.atoms[bond.to]
-          const length = Math.max(1, Math.hypot(to.x - from.x, to.y - from.y))
-          const dx = -(to.y - from.y) / length
-          const dy = (to.x - from.x) / length
-          const offsets = bond.order === 2 ? [-2.5, 2.5] : bond.order === 3 ? [-4, 0, 4] : [0]
-          return <g key={index} data-bond={index} role="button" tabIndex={0} aria-label={`化学键 ${index + 1}：${bond.order === 2 ? '双键' : bond.order === 3 ? '三键' : '单键'}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); tap({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, -1, index) } }} className="simple-editor-bond"><line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="transparent" strokeWidth={18 * labelScale} />{offsets.map(offset => <line key={offset} x1={from.x + dx * offset} y1={from.y + dy * offset} x2={to.x + dx * offset} y2={to.y + dy * offset} className="visible-bond" vectorEffect="non-scaling-stroke" />)}</g>
+          return <g key={index} data-bond={index} role="button" tabIndex={0} aria-label={`化学键 ${index + 1}：${bond.order === 2 ? '双键' : bond.order === 3 ? '三键' : '单键'}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); tap({ x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }, -1, index) } }} className="simple-editor-bond"><line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="transparent" strokeWidth={18 * labelScale} />{getEditorBondLines(graph, index).map((line, lineIndex) => <line key={lineIndex} {...line} className="visible-bond" vectorEffect="non-scaling-stroke" />)}</g>
         })}
         {graph.atoms.map((atom, index) => {
           const label = atomLabel(atom, index, graph)

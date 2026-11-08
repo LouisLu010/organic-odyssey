@@ -2,7 +2,7 @@ import { Molecule } from 'openchemlib'
 import { describe, expect, it } from 'vitest'
 import { levels } from '../data/levels'
 import type { EditorGraph } from './moleculeEditor'
-import { addEditorBond, addEditorRing, ELEMENT_NUMBERS, layoutEditorGraph, parseEditorSmiles, removeEditorAtom, removeEditorBond, serializeEditorGraph } from './moleculeEditor'
+import { addEditorBond, addEditorRing, ELEMENT_NUMBERS, getEditorExtensionPoint, layoutEditorGraph, parseEditorSmiles, removeEditorAtom, removeEditorBond, serializeEditorGraph } from './moleculeEditor'
 
 function identity(smiles: string): string {
   const molecule = Molecule.fromSmiles(smiles)
@@ -155,6 +155,113 @@ describe('图编辑操作', () => {
     insideCanvas(arranged)
     expect(identity(serializeEditorGraph(arranged))).toBe(identity(serializeEditorGraph(source)))
     expect(layoutEditorGraph(empty())).toEqual(empty())
+  })
+})
+
+describe('原子延长方向', () => {
+  it.each([0, 1, 2, 3, 4, 5])('苯环顶点 %i 沿环外角平分线延长一根键', index => {
+    const graph = addEditorRing(empty(), 320, 180, 6, true)
+    const snapshot = structuredClone(graph)
+    const point = getEditorExtensionPoint(graph, index)
+    const atom = graph.atoms[index]
+    expect(point.x).toBeCloseTo(320 + 2 * (atom.x - 320))
+    expect(point.y).toBeCloseTo(180 + 2 * (atom.y - 180))
+    expect(Math.hypot(point.x - atom.x, point.y - atom.y)).toBeCloseTo(44)
+    expect(graph).toEqual(snapshot)
+  })
+
+  it('旋转后的苯环仍沿真实角平分线延长，不吸附到开链候选角', () => {
+    const graph = addEditorRing(empty(), 320, 180, 6, true)
+    const angle = Math.PI / 9
+    graph.atoms = graph.atoms.map(atom => ({
+      ...atom,
+      x: 320 + (atom.x - 320) * Math.cos(angle) - (atom.y - 180) * Math.sin(angle),
+      y: 180 + (atom.x - 320) * Math.sin(angle) + (atom.y - 180) * Math.cos(angle),
+    }))
+    const point = getEditorExtensionPoint(graph, 0)
+    expect(point.x).toBeCloseTo(320 + 88 * Math.sin(angle))
+    expect(point.y).toBeCloseTo(180 - 88 * Math.cos(angle))
+  })
+
+  it('拥挤取代苯优先沿局部环外方向，避免被其他取代基偏转', () => {
+    const graph = parseEditorSmiles('CC(=O)Nc1ccc([N+](=O)[O-])cc1')
+    const point = getEditorExtensionPoint(graph, 12)
+    expect(point.x).toBeCloseTo(377.1576766497729)
+    expect(point.y).toBeCloseTo(202)
+    expect(Math.hypot(point.x - graph.atoms[12].x, point.y - graph.atoms[12].y)).toBeCloseTo(44)
+  })
+
+  it('环外位置已有原子时保留原有避碰候选', () => {
+    const graph = addEditorRing(empty(), 320, 180, 6, true)
+    graph.atoms.push({ element: 'C', x: 320, y: 92, charge: 0 })
+    const point = getEditorExtensionPoint(graph, 0)
+    expect(point.x).toBeCloseTo(358.1051177665153)
+    expect(point.y).toBeCloseTo(114)
+    expect(Math.hypot(point.x - 320, point.y - 92)).toBeGreaterThan(30)
+  })
+
+  it('环外位置越过画布边界时使用合法的原有候选', () => {
+    const graph = addEditorRing(empty(), 320, 100, 6, true)
+    const point = getEditorExtensionPoint(graph, 0)
+    expect(point.x).toBeCloseTo(358.1051177665153)
+    expect(point.y).toBeCloseTo(34)
+    expect(point.x).toBeGreaterThanOrEqual(20)
+    expect(point.x).toBeLessThanOrEqual(620)
+    expect(point.y).toBeGreaterThanOrEqual(24)
+    expect(point.y).toBeLessThanOrEqual(336)
+  })
+
+  it('开链的两个邻居不会被误判为环，闭合后才使用环外角平分线', () => {
+    const graph: EditorGraph = {
+      atoms: [
+        { element: 'C', x: 320, y: 180, charge: 0 },
+        { element: 'C', x: 320 + 44 * Math.cos(Math.PI / 9), y: 180 + 44 * Math.sin(Math.PI / 9), charge: 0 },
+        { element: 'C', x: 320 + 44 * Math.cos(7 * Math.PI / 9), y: 180 + 44 * Math.sin(7 * Math.PI / 9), charge: 0 },
+      ],
+      bonds: [{ from: 0, to: 1, order: 1 }, { from: 0, to: 2, order: 1 }],
+    }
+    expect(getEditorExtensionPoint(graph, 0)).toEqual({ x: 320, y: 136 })
+    const closed = addEditorBond(graph, 1, 2)
+    const ringPoint = getEditorExtensionPoint(closed, 0)
+    expect(ringPoint.x).toBeCloseTo(320 - 44 * Math.sin(Math.PI / 18))
+    expect(ringPoint.y).toBeCloseTo(180 - 44 * Math.cos(Math.PI / 18))
+  })
+
+  it('孤立原子、单邻居和三配位节点保留原有候选评分', () => {
+    const single: EditorGraph = { atoms: [{ element: 'C', x: 320, y: 180, charge: 0 }], bonds: [] }
+    const singlePoint = getEditorExtensionPoint(single, 0)
+    expect(singlePoint.x).toBeCloseTo(358.1051177665153)
+    expect(singlePoint.y).toBeCloseTo(158)
+    const end: EditorGraph = {
+      atoms: [...single.atoms, { element: 'C', x: 364, y: 180, charge: 0 }],
+      bonds: [{ from: 0, to: 1, order: 1 }],
+    }
+    expect(getEditorExtensionPoint(end, 0)).toEqual({ x: 276, y: 180 })
+    const branched = addEditorRing(empty(), 320, 180, 6, true)
+    branched.atoms.push({ element: 'C', x: 320, y: 92, charge: 0 })
+    branched.bonds.push({ from: 0, to: 6, order: 1 })
+    const branchPoint = getEditorExtensionPoint(branched, 0)
+    expect(branchPoint.x).toBeCloseTo(358.1051177665153)
+    expect(branchPoint.y).toBeCloseTo(114)
+  })
+
+  it.each([
+    { coordinates: [[320, 180], [320, 180], [364, 180]] },
+    { coordinates: [[320, 180], [276, 180], [364, 180]] },
+  ])('环边重合或共线时回退，不产生非有限坐标：$coordinates', ({ coordinates }) => {
+    const graph: EditorGraph = {
+      atoms: coordinates.map(([x, y]) => ({ element: 'C', x, y, charge: 0 })),
+      bonds: [{ from: 0, to: 1, order: 1 }, { from: 1, to: 2, order: 1 }, { from: 2, to: 0, order: 1 }],
+    }
+    const point = getEditorExtensionPoint(graph, 0)
+    expect(Number.isFinite(point.x)).toBe(true)
+    expect(Number.isFinite(point.y)).toBe(true)
+    expect(Math.hypot(point.x - 320, point.y - 180)).toBeCloseTo(44)
+  })
+
+  it.each([-1, 1, 0.5, NaN])('拒绝不存在的起点 %s', index => {
+    const graph: EditorGraph = { atoms: [{ element: 'C', x: 320, y: 180, charge: 0 }], bonds: [] }
+    expect(() => getEditorExtensionPoint(graph, index)).toThrow('INVALID_GRAPH')
   })
 })
 

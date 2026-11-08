@@ -23,7 +23,8 @@
 .simple-editor-atom text { font-family: Arial, sans-serif; fill: currentColor; }
 .simple-editor-atom.element-O { color: #957186; }
 .simple-editor-atom.element-N { color: #77629a; }
-.carbon-handle { fill: #a992bf; opacity: .45; }
+.carbon-handle { fill: #a992bf; opacity: 0; }
+.simple-molecule-canvas.tool-move .carbon-handle, .simple-molecule-canvas.tool-erase .carbon-handle { opacity: .45; }
 .simple-editor-atom:hover .carbon-handle, .simple-editor-atom:focus .carbon-handle { fill: #8660b6; opacity: 1; r: 5px; }
 .simple-editor-atom:hover .atom-touch-target, .simple-editor-atom:focus .atom-touch-target { fill: #bda3df25; }
 .simple-editor-atom:focus-visible, .simple-editor-bond:focus-visible { outline: none; }

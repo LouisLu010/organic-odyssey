@@ -32,6 +32,8 @@ const BOND_TYPES: Record<number, number> = {
   2: Molecule.cBondTypeDouble,
   3: Molecule.cBondTypeTriple,
 }
+const EDITOR_COORDINATE_BOUNDS = { minX: 20, maxX: 620, minY: 24, maxY: 336 }
+const MIN_EXTENSION_SEPARATION = 30
 
 function copyGraph(graph: EditorGraph): EditorGraph {
   return { atoms: graph.atoms.map(atom => ({ ...atom })), bonds: graph.bonds.map(bond => ({ ...bond })) }
@@ -166,6 +168,74 @@ export function addEditorRing(graph: EditorGraph, x: number, y: number, size: 3 
     result.bonds.push({ from: offset + index, to: offset + (index + 1) % size, order: aromatic && index % 2 === 0 ? 2 : 1 })
   }
   return result
+}
+
+function hasPathWithoutAtom(graph: EditorGraph, start: number, target: number, excluded: number): boolean {
+  const queue = [start]
+  const visited = new Set([excluded, start])
+  while (queue.length) {
+    const current = queue.shift()!
+    if (current === target) return true
+    for (const bond of graph.bonds) {
+      const next = bond.from === current ? bond.to : bond.to === current ? bond.from : -1
+      if (next >= 0 && !visited.has(next)) {
+        visited.add(next)
+        queue.push(next)
+      }
+    }
+  }
+  return false
+}
+
+function isLegalExtensionPoint(graph: EditorGraph, index: number, point: { x: number; y: number }): boolean {
+  if (
+    point.x < EDITOR_COORDINATE_BOUNDS.minX
+    || point.x > EDITOR_COORDINATE_BOUNDS.maxX
+    || point.y < EDITOR_COORDINATE_BOUNDS.minY
+    || point.y > EDITOR_COORDINATE_BOUNDS.maxY
+  ) return false
+  return graph.atoms.every((atom, atomIndex) => atomIndex === index || Math.hypot(atom.x - point.x, atom.y - point.y) >= MIN_EXTENSION_SEPARATION)
+}
+
+/**
+ * 环顶点优先沿外侧角平分线延长；开链、碰撞和越界时保留原有候选评分。
+ */
+export function getEditorExtensionPoint(graph: EditorGraph, index: number): { x: number; y: number } {
+  if (!isAtomIndex(graph, index)) throw new Error('INVALID_GRAPH')
+  const atom = graph.atoms[index]
+  const neighbours = [...new Set(graph.bonds
+    .filter(bond => bond.from === index || bond.to === index)
+    .map(bond => bond.from === index ? bond.to : bond.from))]
+
+  if (neighbours.length === 2 && hasPathWithoutAtom(graph, neighbours[0], neighbours[1], index)) {
+    const first = graph.atoms[neighbours[0]]
+    const second = graph.atoms[neighbours[1]]
+    const firstLength = Math.hypot(first.x - atom.x, first.y - atom.y)
+    const secondLength = Math.hypot(second.x - atom.x, second.y - atom.y)
+    if (firstLength > 1e-8 && secondLength > 1e-8) {
+      const outwardX = -((first.x - atom.x) / firstLength + (second.x - atom.x) / secondLength)
+      const outwardY = -((first.y - atom.y) / firstLength + (second.y - atom.y) / secondLength)
+      const outwardLength = Math.hypot(outwardX, outwardY)
+      if (outwardLength > 1e-8) {
+        const ringPoint = { x: atom.x + (outwardX / outwardLength) * BOND_LENGTH, y: atom.y + (outwardY / outwardLength) * BOND_LENGTH }
+        if (isLegalExtensionPoint(graph, index, ringPoint)) return ringPoint
+      }
+    }
+  }
+
+  const angleCandidates = [-Math.PI / 6, Math.PI / 6, -Math.PI / 2, Math.PI / 2, -5 * Math.PI / 6, 5 * Math.PI / 6, 0, Math.PI]
+  let best = { x: atom.x + 38, y: atom.y - 22 }
+  let bestScore = -Infinity
+  const neighbourAtoms = neighbours.map(neighbour => graph.atoms[neighbour])
+  for (const angle of angleCandidates) {
+    const point = { x: atom.x + Math.cos(angle) * BOND_LENGTH, y: atom.y + Math.sin(angle) * BOND_LENGTH }
+    if (point.x < EDITOR_COORDINATE_BOUNDS.minX || point.x > EDITOR_COORDINATE_BOUNDS.maxX || point.y < EDITOR_COORDINATE_BOUNDS.minY || point.y > EDITOR_COORDINATE_BOUNDS.maxY) continue
+    const separation = Math.min(88, ...graph.atoms.filter((_, current) => current !== index).map(other => Math.hypot(other.x - point.x, other.y - point.y)))
+    const angleScore = neighbourAtoms.length === 1 ? -Math.abs(Math.cos(angle - Math.atan2(neighbourAtoms[0].y - atom.y, neighbourAtoms[0].x - atom.x)) + .5) * 20 : 0
+    const score = separation + angleScore
+    if (score > bestScore) { best = point; bestScore = score }
+  }
+  return best
 }
 
 export function layoutEditorGraph(graph: EditorGraph): EditorGraph {
