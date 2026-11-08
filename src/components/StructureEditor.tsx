@@ -4,8 +4,11 @@ import { createPortal } from 'react-dom'
 import { ArrowDownToLine, Check, ChevronDown, Eraser, Hand, Maximize2, PencilLine, Redo2, Sparkles, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { getEditorBondLines } from '../lib/bondGeometry'
 import { fitEditorViewport, hitTestEditorGraph } from '../lib/editorViewport'
+import { HanddrawRecognitionError, recognizeHanddraw } from '../lib/handdraw'
+import type { HanddrawStroke } from '../lib/handdraw'
 import { addEditorBond, addEditorRing, getEditorExtensionPoint, layoutEditorGraph, parseEditorSmiles, removeEditorAtom, removeEditorBond, serializeEditorGraph } from '../lib/moleculeEditor'
 import type { EditorAtom, EditorGraph } from '../lib/moleculeEditor'
+import HanddrawCanvas from './HanddrawCanvas'
 import '../styles/structure-editor.css'
 
 interface StructureEditorProps {
@@ -19,6 +22,7 @@ type Tool = 'bond' | 'erase' | 'move' | 'benzene' | 'ring3' | 'ring6' | 'O' | 'N
 type Point = { x: number; y: number }
 type History = { past: EditorGraph[]; present: EditorGraph; future: EditorGraph[] }
 type Camera = { center: Point; zoom: number }
+type InkHistory = { strokes: HanddrawStroke[]; future: HanddrawStroke[] }
 type Gesture = { point: Point; screen: Point; atom: number; bond: number; moved: boolean; pointer: number; camera: Camera; pan: boolean }
 const EMPTY_GRAPH: EditorGraph = { atoms: [], bonds: [] }
 const UNBOUNDED_CANVAS = { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity }
@@ -61,6 +65,11 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
     return { past: [], present, future: [] }
   })
   const graph = history.present
+  const [mode, setMode] = useState<'point' | 'handdraw'>('point')
+  const [ink, setInk] = useState<InkHistory>({ strokes: [], future: [] })
+  const [drawing, setDrawing] = useState(false)
+  const [discardPrompt, setDiscardPrompt] = useState(false)
+  const [recognitionNotice, setRecognitionNotice] = useState<string[]>([])
   const [tool, setTool] = useState<Tool>('bond')
   const [bondOrder, setBondOrder] = useState(1)
   const [panning, setPanning] = useState(false)
@@ -77,6 +86,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
   const undoRef = useRef(() => {})
   const redoRef = useRef(() => {})
   const initialGraphRef = useRef(graph)
+  const fitRequestRef = useRef<EditorGraph | null>(null)
   const fittedRef = useRef(false)
   const gestureRef = useRef<Gesture | null>(null)
   const pointersRef = useRef(new Map<number, Point>())
@@ -86,6 +96,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
   const helpId = useId()
   const importId = useId()
   const errorId = useId()
+  const pendingInk = ink.strokes.length > 0 || drawing
   const viewWidth = drawingSize.width / camera.zoom
   const viewHeight = drawingSize.height / camera.zoom
   const labelScale = 1 / camera.zoom
@@ -95,14 +106,25 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
     if (next === graph) return
     setHistory(previous => ({ past: [...previous.past.slice(-59), previous.present], present: next, future: [] }))
     setError('')
+    setRecognitionNotice([])
   }
 
   function undo() {
+    if (mode === 'handdraw') {
+      setInk(previous => previous.strokes.length ? { strokes: previous.strokes.slice(0, -1), future: [previous.strokes.at(-1)!, ...previous.future] } : previous)
+      setError('')
+      return
+    }
     setHistory(previous => previous.past.length ? { past: previous.past.slice(0, -1), present: previous.past.at(-1)!, future: [previous.present, ...previous.future] } : previous)
     setError('')
   }
 
   function redo() {
+    if (mode === 'handdraw') {
+      setInk(previous => previous.future.length ? { strokes: [...previous.strokes, previous.future[0]], future: previous.future.slice(1) } : previous)
+      setError('')
+      return
+    }
     setHistory(previous => previous.future.length ? { past: [...previous.past, previous.present], present: previous.future[0], future: previous.future.slice(1) } : previous)
     setError('')
   }
@@ -110,6 +132,30 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
   function chooseTool(next: Tool) { setTool(next); setPanning(false); setError('') }
   function fit(next = graph) { setCamera(fitEditorViewport(next, drawingSize)) }
   function zoomBy(factor: number) { setCamera(previous => ({ ...previous, zoom: Math.max(.45, Math.min(2.5, previous.zoom * factor)) })) }
+
+  function requestClose() {
+    if (pendingInk) setDiscardPrompt(true)
+    else onClose()
+  }
+
+  function recognizeDrawing() {
+    try {
+      const result = recognizeHanddraw(ink.strokes)
+      // 先验证成键数，再交给原画板检查和补充原子，不直接提交答案。
+      serializeEditorGraph(result.graph)
+      const arranged = layoutEditorGraph(result.graph)
+      commit(arranged)
+      fit(arranged)
+      fitRequestRef.current = arranged
+      setInk({ strokes: [], future: [] })
+      setMode('point')
+      setDiscardPrompt(false)
+      setRecognitionNotice([`已整理：${arranged.atoms.length} 个碳、${arranged.bonds.length} 条键。请补原子并核对键级。`, ...result.warnings])
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : ''
+      setError(cause instanceof HanddrawRecognitionError ? `${cause.message} 原笔迹已保留。` : /VALENCE|valence/i.test(message) ? '识别后有碳原子成键过多。请检查交叉、分支和重复笔迹，再试一次。' : '还没识别清楚。请将每根键画直一些、端点靠拢；字母和圆圈请改用原子或苯环工具。原笔迹已保留。')
+    }
+  }
 
   function reveal(point: Point) {
     setCamera(previous => {
@@ -122,7 +168,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
     })
   }
 
-  useEffect(() => { closeRef.current = onClose; undoRef.current = undo; redoRef.current = redo })
+  useEffect(() => { closeRef.current = requestClose; undoRef.current = undo; redoRef.current = redo })
 
   useEffect(() => {
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -155,7 +201,8 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
       const size = { width: entries[0].contentRect.width, height: entries[0].contentRect.height }
       if (!size.width || !size.height) return
       setDrawingSize(size)
-      if (!fittedRef.current) { fittedRef.current = true; setCamera(fitEditorViewport(initialGraphRef.current, size)) }
+      if (fitRequestRef.current) { setCamera(fitEditorViewport(fitRequestRef.current, size)); fitRequestRef.current = null }
+      else if (!fittedRef.current) { fittedRef.current = true; setCamera(fitEditorViewport(initialGraphRef.current, size)) }
     })
     if (svgRef.current) observer.observe(svgRef.current)
     return () => {
@@ -298,6 +345,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
   function cancelPointers() { pointersRef.current.clear(); gestureRef.current = null; pinchRef.current = null; suppressTapRef.current = false; setPreview(null) }
 
   function importStructure() {
+    if (pendingInk) { setError('还有未识别的笔迹，请先识别或丢弃笔迹，再导入结构。'); return }
     try {
       const next = parseEditorSmiles(importText.trim())
       serializeEditorGraph(next)
@@ -309,13 +357,18 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
     } catch (cause) { setError(structureError(cause)) }
   }
 
-  return createPortal(<div ref={backdropRef} className="structure-editor-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) onClose() }}>
+  return createPortal(<div ref={backdropRef} className="structure-editor-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) requestClose() }}>
     <div className="structure-editor-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={helpId} ref={dialogRef} tabIndex={-1}>
-      <header className="structure-editor-header"><div><span>键线式分子画板</span><h2 id={titleId}>{title}</h2></div><button className="structure-editor-close" aria-label="关闭分子绘图" onClick={onClose}><X size={22} /></button></header>
-      <div className="simple-editor-toolbar" role="group" aria-label="分子绘图工具">{MAIN_TOOLS.map(item => <button key={item.value} type="button" aria-pressed={tool === item.value && !panning} className={tool === item.value && !panning ? 'selected' : ''} onClick={() => chooseTool(item.value)}>{item.value === 'bond' ? <PencilLine size={18} /> : item.value === 'benzene' ? BENZENE_ICON : item.value === 'erase' ? <Eraser size={18} /> : null}{item.label}</button>)}<select aria-label="更多原子和环工具" value={MORE_TOOLS.some(item => item.value === tool) ? tool : ''} onChange={event => chooseTool(event.target.value as Tool)}><option value="" disabled>更多</option>{MORE_TOOLS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-      <div className="simple-editor-action-row"><div className="bond-order-controls" role="group" aria-label="选择键型">{[1, 2, 3].map(order => <button key={order} type="button" aria-label={`使用${['单', '双', '三'][order - 1]}键`} aria-pressed={tool === 'bond' && bondOrder === order && !panning} onClick={() => { chooseTool('bond'); setBondOrder(order) }}>{['单键', '双键', '三键'][order - 1]}</button>)}</div><div className="editor-history-controls"><button type="button" aria-label="撤销一步" title="撤销（⌘/Ctrl Z）" disabled={!history.past.length} onClick={undo}><Undo2 size={20} /></button><button type="button" aria-label="重做一步" disabled={!history.future.length} onClick={redo}><Redo2 size={20} /></button></div></div>
-      <p className="simple-editor-instruction" id={helpId}>{panning ? '拖动画布移动视野；再次点手掌即可继续画图。' : TOOL_HELP[tool] ?? `点原子替换成 ${tool}，或在空白处放入后连键。`}</p>
-      <div className="structure-editor-canvas-frame"><svg ref={svgRef} className={`simple-molecule-canvas tool-${panning ? 'pan' : tool}`} viewBox={viewBox} role="group" aria-label="键线式分子绘图画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelPointers}>
+      <header className="structure-editor-header"><div><span>键线式分子画板</span><h2 id={titleId}>{title}</h2></div><button className="structure-editor-close" aria-label="关闭分子绘图" onClick={requestClose}><X size={22} /></button></header>
+      <div className="editor-mode-switch" role="group" aria-label="绘制方式"><button type="button" aria-pressed={mode === 'point'} disabled={drawing} onClick={() => { setMode('point'); setError('') }}>点选绘制</button><button type="button" aria-pressed={mode === 'handdraw'} disabled={drawing} onClick={() => { setMode('handdraw'); setError(''); setDiscardPrompt(false) }}><PencilLine size={17} />手绘识别</button></div>
+      {discardPrompt ? <div className="editor-discard-prompt" role="alert"><p>还有未识别的笔迹，关闭后会丢失。</p><div><button type="button" onClick={() => { setDiscardPrompt(false); setMode('handdraw') }}>继续手绘</button><button type="button" onClick={onClose}>丢弃并关闭</button></div></div> : null}
+      {mode === 'point' && pendingInk ? <div className="editor-pending-ink" role="status"><span>还有 {ink.strokes.length} 笔未识别，保存前请先处理。</span><button type="button" onClick={() => { setInk({ strokes: [], future: [] }); setError(''); setDiscardPrompt(false) }}>丢弃笔迹</button></div> : null}
+      <div className="simple-editor-toolbar" hidden={mode !== 'point'} role="group" aria-label="分子绘图工具">{MAIN_TOOLS.map(item => <button key={item.value} type="button" aria-pressed={tool === item.value && !panning} className={tool === item.value && !panning ? 'selected' : ''} onClick={() => chooseTool(item.value)}>{item.value === 'bond' ? <PencilLine size={18} /> : item.value === 'benzene' ? BENZENE_ICON : item.value === 'erase' ? <Eraser size={18} /> : null}{item.label}</button>)}<select aria-label="更多原子和环工具" value={MORE_TOOLS.some(item => item.value === tool) ? tool : ''} onChange={event => chooseTool(event.target.value as Tool)}><option value="" disabled>更多</option>{MORE_TOOLS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
+      <div className="simple-editor-action-row" hidden={mode !== 'point'}><div className="bond-order-controls" role="group" aria-label="选择键型">{[1, 2, 3].map(order => <button key={order} type="button" aria-label={`使用${['单', '双', '三'][order - 1]}键`} aria-pressed={tool === 'bond' && bondOrder === order && !panning} onClick={() => { chooseTool('bond'); setBondOrder(order) }}>{['单键', '双键', '三键'][order - 1]}</button>)}</div><div className="editor-history-controls"><button type="button" aria-label="撤销一步" title="撤销（⌘/Ctrl Z）" disabled={!history.past.length} onClick={undo}><Undo2 size={20} /></button><button type="button" aria-label="重做一步" disabled={!history.future.length} onClick={redo}><Redo2 size={20} /></button></div></div>
+      <p className="simple-editor-instruction" id={helpId}>{mode === 'handdraw' ? '可连画折线，或把每根键分开画。O、N、卤素等字母请在识别后用原子工具补充。' : panning ? '拖动画布移动视野；再次点手掌即可继续画图。' : TOOL_HELP[tool] ?? `点原子替换成 ${tool}，或在空白处放入后连键。`}</p>
+      {mode === 'point' && recognitionNotice.length ? <div className="handdraw-recognition-feedback" role="status"><p>{recognitionNotice[0]}</p>{recognitionNotice.length > 1 ? <details><summary>有 {recognitionNotice.length - 1} 项需要检查</summary><ul>{recognitionNotice.slice(1).map((notice, index) => <li key={index}>{notice}</li>)}</ul></details> : null}</div> : null}
+      {mode === 'handdraw' ? <><div className="handdraw-action-row"><span aria-live="polite">已画 {ink.strokes.length} 笔</span><div className="editor-history-controls"><button type="button" aria-label="撤销一笔" disabled={drawing || !ink.strokes.length} onClick={undo}><Undo2 size={20} /></button><button type="button" aria-label="重做一笔" disabled={drawing || !ink.future.length} onClick={redo}><Redo2 size={20} /></button></div></div><div className="handdraw-canvas-frame"><HanddrawCanvas strokes={ink.strokes} onDrawingChange={setDrawing} onStroke={stroke => { if (ink.strokes.length >= 128) { setError('笔迹较多，请先识别，或撤销多余的笔画。'); return } setInk(previous => ({ strokes: [...previous.strokes, stroke], future: [] })); setError('') }} /></div><p className="handdraw-replacement-note">{graph.atoms.length ? '识别后替换当前结构，可用撤销恢复。' : '端点和拐角默认为碳，暂不识别手写字母。'}</p></> : null}
+      <div className="structure-editor-canvas-frame" hidden={mode !== 'point'}><svg ref={svgRef} className={`simple-molecule-canvas tool-${panning ? 'pan' : tool}`} viewBox={viewBox} role="group" aria-label="键线式分子绘图画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelPointers}>
         {!graph.atoms.length ? <g className="simple-canvas-empty" pointerEvents="none"><text x={camera.center.x} y={camera.center.y - 12 * labelScale} textAnchor="middle" fontSize={17 * labelScale}>点一下放入碳原子</text><text x={camera.center.x} y={camera.center.y + 16 * labelScale} textAnchor="middle" fontSize={13 * labelScale}>再点原子延长，或选择苯环</text></g> : null}
         {graph.bonds.map((bond, index) => {
           const from = graph.atoms[bond.from]
@@ -328,10 +381,10 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
         })}
         {preview ? <line x1={preview.from.x} y1={preview.from.y} x2={preview.to.x} y2={preview.to.y} className="bond-preview" vectorEffect="non-scaling-stroke" pointerEvents="none" /> : null}
       </svg><div className="editor-view-controls" role="group" aria-label="画板视图"><button type="button" aria-label="缩小分子视图" disabled={camera.zoom <= .45} onClick={() => zoomBy(.8)}><ZoomOut size={20} /></button><button type="button" aria-label="显示完整分子" onClick={() => fit()}><Maximize2 size={19} /></button><button type="button" aria-label="放大分子视图" disabled={camera.zoom >= 2.5} onClick={() => zoomBy(1.25)}><ZoomIn size={20} /></button><button type="button" aria-label="拖动画布" aria-pressed={panning} onClick={() => setPanning(value => !value)}><Hand size={20} /></button></div><span className="editor-zoom-value" aria-live="polite">{Math.round(camera.zoom * 100)}%</span></div>
-      <div className="simple-editor-bottom-tools"><button type="button" onClick={() => { try { const next = layoutEditorGraph(graph); commit(next); fit(next) } catch (cause) { setError(structureError(cause)) } }} disabled={!graph.atoms.length}><Sparkles size={17} />整理结构</button><span>两指缩放、平移 · 端点和拐角是碳</span></div>
-      <details ref={advancedRef} className="structure-editor-advanced"><summary>高级选项：导入 SMILES（可选）<ChevronDown size={16} /></summary><div className="structure-editor-import"><label htmlFor={importId}>SMILES 结构字符串</label><div><input id={importId} value={importText} onChange={event => setImportText(event.target.value)} placeholder="例如：CCO" autoComplete="off" spellCheck={false} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); importStructure() } }} /><button type="button" onClick={importStructure}><ArrowDownToLine size={16} />导入画布</button></div></div></details>
+      <div className="simple-editor-bottom-tools" hidden={mode !== 'point'}><button type="button" onClick={() => { try { const next = layoutEditorGraph(graph); commit(next); fit(next) } catch (cause) { setError(structureError(cause)) } }} disabled={!graph.atoms.length}><Sparkles size={17} />整理结构</button><span>两指缩放、平移 · 端点和拐角是碳</span></div>
+      <details ref={advancedRef} className="structure-editor-advanced" hidden={mode !== 'point' || pendingInk}><summary>高级选项：导入 SMILES（可选）<ChevronDown size={16} /></summary><div className="structure-editor-import"><label htmlFor={importId}>SMILES 结构字符串</label><div><input id={importId} value={importText} onChange={event => setImportText(event.target.value)} placeholder="例如：CCO" autoComplete="off" spellCheck={false} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); importStructure() } }} /><button type="button" onClick={importStructure}><ArrowDownToLine size={16} />导入画布</button></div></div></details>
       {error ? <p className="structure-editor-error" id={errorId} role="alert">{error}</p> : null}
-      <footer className="structure-editor-footer"><button className="structure-editor-clear" aria-label="清空画布" onClick={() => { commit(EMPTY_GRAPH); fit(EMPTY_GRAPH) }} disabled={!graph.atoms.length}><Eraser size={18} /><span>清空</span></button><div><span className="structure-editor-stereo-note">忽略立体异构</span><button className="button primary" onClick={() => { try { onSave(serializeEditorGraph(graph)) } catch (cause) { setError(structureError(cause)) } }} aria-describedby={error ? errorId : undefined}><Check size={18} />保存结构</button></div></footer>
+      <footer className="structure-editor-footer"><button className="structure-editor-clear" aria-label={mode === 'handdraw' ? '清空手绘笔迹' : '清空画布'} onClick={() => { if (mode === 'handdraw') { setInk({ strokes: [], future: [] }); setError(''); setDiscardPrompt(false) } else { commit(EMPTY_GRAPH); fit(EMPTY_GRAPH) } }} disabled={mode === 'handdraw' ? drawing || !ink.strokes.length : !graph.atoms.length}><Eraser size={18} /><span>{mode === 'handdraw' ? '清空笔迹' : '清空'}</span></button><div><span className="structure-editor-stereo-note">忽略立体异构</span>{mode === 'handdraw' ? <button className="button primary" disabled={drawing || !ink.strokes.length} onClick={recognizeDrawing} aria-describedby={error ? errorId : undefined}><Sparkles size={18} />识别并整理</button> : pendingInk ? <button className="button primary" onClick={() => setMode('handdraw')}><PencilLine size={18} />返回手绘</button> : <button className="button primary" onClick={() => { try { onSave(serializeEditorGraph(graph)) } catch (cause) { setError(structureError(cause)) } }} aria-describedby={error ? errorId : undefined}><Check size={18} />保存结构</button>}</div></footer>
     </div>
   </div>, document.body)
 }
