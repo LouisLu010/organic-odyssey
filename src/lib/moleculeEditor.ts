@@ -187,12 +187,12 @@ function hasPathWithoutAtom(graph: EditorGraph, start: number, target: number, e
   return false
 }
 
-function isLegalExtensionPoint(graph: EditorGraph, index: number, point: { x: number; y: number }): boolean {
+function isLegalExtensionPoint(graph: EditorGraph, index: number, point: { x: number; y: number }, bounds: typeof EDITOR_COORDINATE_BOUNDS): boolean {
   if (
-    point.x < EDITOR_COORDINATE_BOUNDS.minX
-    || point.x > EDITOR_COORDINATE_BOUNDS.maxX
-    || point.y < EDITOR_COORDINATE_BOUNDS.minY
-    || point.y > EDITOR_COORDINATE_BOUNDS.maxY
+    point.x < bounds.minX
+    || point.x > bounds.maxX
+    || point.y < bounds.minY
+    || point.y > bounds.maxY
   ) return false
   return graph.atoms.every((atom, atomIndex) => atomIndex === index || Math.hypot(atom.x - point.x, atom.y - point.y) >= MIN_EXTENSION_SEPARATION)
 }
@@ -200,7 +200,7 @@ function isLegalExtensionPoint(graph: EditorGraph, index: number, point: { x: nu
 /**
  * 环顶点优先沿外侧角平分线延长；开链、碰撞和越界时保留原有候选评分。
  */
-export function getEditorExtensionPoint(graph: EditorGraph, index: number): { x: number; y: number } {
+export function getEditorExtensionPoint(graph: EditorGraph, index: number, bounds = EDITOR_COORDINATE_BOUNDS): { x: number; y: number } {
   if (!isAtomIndex(graph, index)) throw new Error('INVALID_GRAPH')
   const atom = graph.atoms[index]
   const neighbours = [...new Set(graph.bonds
@@ -218,7 +218,7 @@ export function getEditorExtensionPoint(graph: EditorGraph, index: number): { x:
       const outwardLength = Math.hypot(outwardX, outwardY)
       if (outwardLength > 1e-8) {
         const ringPoint = { x: atom.x + (outwardX / outwardLength) * BOND_LENGTH, y: atom.y + (outwardY / outwardLength) * BOND_LENGTH }
-        if (isLegalExtensionPoint(graph, index, ringPoint)) return ringPoint
+        if (isLegalExtensionPoint(graph, index, ringPoint, bounds)) return ringPoint
       }
     }
   }
@@ -229,7 +229,7 @@ export function getEditorExtensionPoint(graph: EditorGraph, index: number): { x:
   const neighbourAtoms = neighbours.map(neighbour => graph.atoms[neighbour])
   for (const angle of angleCandidates) {
     const point = { x: atom.x + Math.cos(angle) * BOND_LENGTH, y: atom.y + Math.sin(angle) * BOND_LENGTH }
-    if (point.x < EDITOR_COORDINATE_BOUNDS.minX || point.x > EDITOR_COORDINATE_BOUNDS.maxX || point.y < EDITOR_COORDINATE_BOUNDS.minY || point.y > EDITOR_COORDINATE_BOUNDS.maxY) continue
+    if (point.x < bounds.minX || point.x > bounds.maxX || point.y < bounds.minY || point.y > bounds.maxY) continue
     const separation = Math.min(88, ...graph.atoms.filter((_, current) => current !== index).map(other => Math.hypot(other.x - point.x, other.y - point.y)))
     const angleScore = neighbourAtoms.length === 1 ? -Math.abs(Math.cos(angle - Math.atan2(neighbourAtoms[0].y - atom.y, neighbourAtoms[0].x - atom.x)) + .5) * 20 : 0
     const score = separation + angleScore

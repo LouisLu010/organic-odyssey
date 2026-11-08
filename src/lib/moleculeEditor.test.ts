@@ -159,6 +159,13 @@ describe('图编辑操作', () => {
 })
 
 describe('原子延长方向', () => {
+  it('可平移画板允许在原画布以外继续延长碳链和环取代基', () => {
+    const graph = addEditorRing(empty(), 1000, -400, 6, true)
+    const point = getEditorExtensionPoint(graph, 0, { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity })
+    expect(point.x).toBeCloseTo(1000)
+    expect(point.y).toBeCloseTo(-488)
+    expect(Math.hypot(point.x - graph.atoms[0].x, point.y - graph.atoms[0].y)).toBeCloseTo(44)
+  })
   it.each([0, 1, 2, 3, 4, 5])('苯环顶点 %i 沿环外角平分线延长一根键', index => {
     const graph = addEditorRing(empty(), 320, 180, 6, true)
     const snapshot = structuredClone(graph)

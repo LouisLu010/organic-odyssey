@@ -140,3 +140,109 @@
 @media (max-width: 850px) { .reaction-list { grid-template-columns: 1fr; } .reaction-entry-title { flex-direction: row; } .reaction-entry-bottom { flex-direction: row; } .profile-middle { grid-template-columns: 1fr; gap: 18px; } .notes-workspace { grid-template-columns: 1fr; } .notes-levels { border-right: 0; border-bottom: 1px solid var(--line); padding: 14px; display: flex; overflow-x: auto; gap: 8px; } .notes-list-heading { display: none; } .note-level { flex: 0 0 195px; width: 195px; margin: 0; padding: 12px; } .note-level small { font-size: 9px; } .note-editor { padding: 26px; } .atlas-count { flex-direction: column; gap: 4px; } }
 @media (max-width: 520px) { .study-page .page-heading { margin-bottom: 23px; } .study-page .page-heading h1 { font-size: 27px; } .study-page .page-heading p { font-size: 12px; } .study-heading-row { align-items: flex-start; flex-wrap: wrap; gap: 0; margin-bottom: 22px; } .study-heading-row .page-heading { width: 100%; margin-bottom: 17px; } .study-filter-group { gap: 3px; } .study-filter-group button { font-size: 11px; padding: 8px 10px; } .reaction-entry { padding: 20px; } .reaction-entry-title { align-items: flex-start; gap: 9px; } .reaction-entry h2 { font-size: 18px; } .reaction-english { font-size: 10px; } .study-category { font-size: 9px; padding: 4px 6px; } .reaction-structure-flow { grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr); min-height: 160px; padding-left: 0; padding-right: 0; } .reaction-molecule-node > .molecule { height: 112px; } .reaction-coefficient { left: 2px; top: 54px; font-size: 15px; } .reaction-arrow-reagents { font-size: 9px; } .reaction-arrow-conditions { font-size: 8px; } .reaction-molecule-name { font-size: 8px; } .reaction-example-label { font-size: 9px; } .reaction-entry-bottom { flex-direction: column; gap: 8px; } .reaction-details dd { font-size: 12px; } .note-editor { padding: 23px 20px; } .note-editor h2 { font-size: 24px; } .note-editor textarea { min-height: 260px; font-size: 13px; } .note-source { font-size: 10px; } .note-prompt { padding: 12px; gap: 8px; } .note-prompt p { font-size: 10px; } .note-save-status { font-size: 9px; } .profile-summary { padding: 20px; gap: 14px; flex-wrap: wrap; } .profile-avatar { width: 48px; height: 48px; } .profile-avatar svg { width: 25px; } .profile-summary h2 { font-size: 21px; } .profile-summary p { font-size: 11px; } .profile-level { margin-left: 62px; margin-top: -5px; font-size: 10px; } .profile-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px 0; margin: 23px 0 25px; padding-bottom: 24px; } .profile-stats > div { padding: 3px 17px; } .profile-stats > div:first-child { padding-left: 17px; } .profile-stats > div:nth-child(2) { border-right: 0; } .profile-stats strong { font-size: 28px; } .profile-stats > div > span { font-size: 10px; } .profile-chapters, .profile-activity { padding: 22px 20px; } .study-page .section-heading h2 { font-size: 19px; } .study-page .section-heading > span { font-size: 10px; } .achievement-list { gap: 10px; } .achievement { flex-direction: column; align-items: flex-start; padding: 17px; gap: 13px; } .achievement h3 { font-size: 12px; } .achievement p { font-size: 10px; } .achievement > div:last-child > span { font-size: 10px; } .profile-next { flex-wrap: wrap; padding: 20px; gap: 13px; } .profile-next-mark { display: none; } .profile-next > div:nth-child(2) { flex-basis: 100%; } .profile-next h2 { font-size: 22px; } .profile-next > .button { margin-top: 3px; } .study-footnote { font-size: 10px; } }
 @media (prefers-reduced-motion: reduce) { .study-page { animation: none; } .profile-progress-track > span { transition: none; } }
+
+@media (max-width: 700px) {
+  .study-page { animation: none; }
+  .study-page .page-heading h1 { font-size: 28px; line-height: 1.45; }
+  .study-page .page-heading p { color: #74657f; font-size: 14px; line-height: 1.85; }
+  .study-heading-row { align-items: flex-start; flex-wrap: wrap; gap: 0; margin-bottom: 22px; }
+  .study-heading-row .page-heading { width: 100%; margin-bottom: 17px; }
+  .study-page button, .study-page summary { min-height: 44px; }
+  .study-page .button, .study-text-button { font-size: 14px; }
+  .study-text-button { padding: 10px 0; color: #6746a3; }
+  .study-footnote { color: #786885; font-size: 14px; line-height: 1.85; text-align: left; }
+  .study-page .section-heading { gap: 10px; }
+  .study-page .section-heading h2 { font-size: 21px; line-height: 1.5; }
+  .study-page .section-heading > span { color: #796786; font-size: 12px; }
+  .atlas-toolbar { gap: 12px; }
+  .study-filter-group { gap: 6px; }
+  .study-filter-group button { padding: 10px 12px; color: #74607f; font-size: 14px; }
+  .study-filter-group button.active { color: #664398; }
+  .atlas-search { width: 100%; max-width: none; min-height: 48px; padding: 11px 13px; border-color: #dcd2e8; color: #7a658d; }
+  .atlas-search input { font-size: 16px; color: #493654; }
+  .atlas-search input::placeholder { color: #82708d; }
+  .atlas-count { font-size: 14px; color: #73607e; line-height: 1.75; }
+  .atlas-count > span { color: #7f6b8c; }
+  .reaction-list { gap: 16px; }
+  .reaction-entry { padding: 17px; }
+  .reaction-entry-title { flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .reaction-entry h2 { font-size: 22px; line-height: 1.5; }
+  .reaction-english { color: #82718d; font-size: 12px; }
+  .study-category { padding: 6px 8px; color: #745392; font-size: 12px; }
+  .reaction-example-label { margin-bottom: 14px; color: #7a6589; font-size: 14px; line-height: 1.8; }
+  .reaction-structure-flow { grid-template-columns: minmax(0, 1fr); gap: 5px; padding: 14px 10px; }
+  .reaction-molecule-node > .molecule { width: 100%; max-width: 250px; height: 148px; }
+  .reaction-molecule-name { color: #6e557d; font-size: 14px; line-height: 1.65; }
+  .reaction-coefficient { left: 16px; top: 65px; font-size: 21px; color: #6d527e; }
+  .reaction-arrow-labels { grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr); grid-template-rows: auto; min-height: 92px; align-items: center; gap: 10px; padding: 7px 4px; }
+  .reaction-arrow-reagents, .reaction-arrow-conditions { color: #70527e; font-size: 14px; line-height: 1.75; }
+  .reaction-flow-arrow { width: 72px; height: 22px; justify-self: center; transform: rotate(90deg); color: #84649c; }
+  .reaction-explanation { margin: 12px 0; }
+  .reaction-explanation > summary { padding: 11px 0; color: #735783; font-size: 14px; }
+  .reaction-details dt { color: #5c466b; font-size: 14px; }
+  .reaction-details dd { color: #74617e; font-size: 14px; line-height: 1.9; }
+  .reaction-details .reaction-pitfall dt { color: #896238; }
+  .reaction-entry-bottom { align-items: stretch; flex-direction: column; gap: 7px; padding-top: 12px; }
+  .reaction-scope, .reaction-scope.information { color: #7c6888; font-size: 13px; line-height: 1.75; }
+  .reaction-reference { min-height: 44px; padding: 10px 0; font-size: 14px; color: #73568b; line-height: 1.75; }
+  .study-empty p { color: #756280; font-size: 14px; }
+  .notes-workspace { min-height: 0; }
+  .notes-levels { padding: 12px; gap: 8px; overscroll-behavior-x: contain; scroll-padding-inline: 12px; }
+  .note-level { flex-basis: 230px; width: 230px; min-height: 88px; padding: 13px; gap: 10px; }
+  .note-level strong { color: #705b82; font-size: 14px; line-height: 1.65; }
+  .note-level.selected strong { color: #68439f; }
+  .note-level small { color: #81708e; font-size: 12px; line-height: 1.65; }
+  .note-level-number { color: #8a70a1; font-size: 22px; }
+  .note-editor { padding: 21px 17px; }
+  .note-editor-top { flex-wrap: wrap; gap: 8px; color: #7c688b; font-size: 13px; line-height: 1.7; }
+  .note-save-status { color: #52735e; font-size: 12px; }
+  .note-save-status.unsaved { color: #896331; }
+  .note-editor h2 { font-size: 25px; }
+  .note-source { color: #7b6889; font-size: 13px; line-height: 1.8; }
+  .note-prompt { margin: 19px 0; padding: 13px; gap: 9px; color: #8c6ba4; }
+  .note-prompt p { color: #7a6089; font-size: 14px; line-height: 1.85; }
+  .note-editor-label { font-size: 14px; color: #715a81; }
+  .note-editor textarea { min-height: 300px; font-size: 16px; line-height: 32px; color: #4f3e5d; }
+  .note-editor textarea::placeholder { color: #8c7a98; }
+  .note-editor-bottom { flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .note-editor-bottom > span { color: #82708e; font-size: 13px; }
+  .study-inline-notice { color: #51765c; font-size: 14px; line-height: 1.75; }
+  .profile-summary { gap: 12px; padding: 20px 17px; }
+  .profile-summary > div:nth-child(2) { flex: 1; min-width: 0; }
+  .profile-summary h2 { color: #604375; font-size: 22px; line-height: 1.5; }
+  .profile-summary p { color: #765e86; font-size: 14px; line-height: 1.8; }
+  .profile-level { flex-basis: 100%; margin: 0; color: #705184; font-size: 14px; white-space: normal; }
+  .profile-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 0; }
+  .profile-stats > div { padding: 4px 14px; gap: 8px; }
+  .profile-stats > div:first-child { padding-left: 14px; }
+  .profile-stats > div:nth-child(2) { border-right: 0; }
+  .profile-stats strong { font-size: 30px; color: #624578; }
+  .profile-stats strong small { color: #8e779f; font-size: 15px; }
+  .profile-stats > div > span { margin-left: 28px; color: #7b648a; font-size: 14px; }
+  .profile-chapters, .profile-activity { padding: 21px 17px; }
+  .profile-chapter-label strong { font-size: 15px; color: #624b74; }
+  .profile-chapter-label span { color: #7c658d; font-size: 13px; }
+  .profile-chapter p { margin: 7px 0 12px; color: #7b668c; font-size: 14px; line-height: 1.8; }
+  .profile-chapter-number { color: #9980ad; font-size: 23px; }
+  .profile-progress-track { height: 5px; }
+  .profile-activity > p { margin: -4px 0 24px; color: #7c678c; font-size: 14px; line-height: 1.8; }
+  .study-week { gap: 4px; }
+  .study-week > div { gap: 11px; color: #7d668e; font-size: 12px; }
+  .study-week small { color: #80678f; font-size: 11px; }
+  .profile-activity-note { margin-top: 22px; padding-top: 16px; color: #7b648a; font-size: 13px; line-height: 1.8; }
+  .achievement-list { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .achievement { flex-direction: row; align-items: flex-start; padding: 18px; gap: 13px; }
+  .achievement h3 { color: #735c82; font-size: 16px; line-height: 1.5; }
+  .achievement p { color: #83708e; font-size: 14px; line-height: 1.8; }
+  .achievement > div:last-child > span { color: #856b97; font-size: 13px; }
+  .achievement.earned h3 { color: #66447d; }
+  .achievement.earned p { color: #735a83; }
+  .achievement.earned > div:last-child > span { color: #71499a; }
+  .profile-next { flex-wrap: wrap; padding: 20px 17px; gap: 14px; }
+  .profile-next-mark { display: none; }
+  .profile-next > div:nth-child(2) { flex-basis: 100%; }
+  .profile-next > div > span { color: #7b608b; font-size: 14px; line-height: 1.8; }
+  .profile-next h2 { color: #64437a; font-size: 24px; }
+  .profile-next > .button { min-height: 46px; width: 100%; margin-top: 0; }
+  .study-page *, .profile-progress-track > span { transition: none; }
+}

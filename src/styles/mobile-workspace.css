@@ -1,0 +1,682 @@
+.flow-field-label,
+.flow-direction-mobile,
+.mobile-task-actions,
+.mobile-return-to-canvas {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .level-workspace {
+    font-size: 14px;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+  }
+
+  .level-workspace button,
+  .level-workspace summary,
+  .level-workspace .source-disclosure a {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .level-workspace .button,
+  .level-workspace .text-button {
+    font-size: 14px;
+  }
+
+  .level-workspace textarea {
+    font-size: 16px;
+  }
+
+  .level-workspace .level-back-row {
+    margin: -12px 0 5px;
+    gap: 8px;
+  }
+
+  .level-workspace .level-code {
+    font-size: 11px;
+    letter-spacing: .5px;
+  }
+
+  .level-workspace .level-back-row > div {
+    gap: 5px;
+  }
+
+  .level-workspace .level-page-heading .page-heading {
+    margin-bottom: 6px;
+  }
+
+  .level-workspace .level-page-heading .page-heading h1 {
+    font-size: 26px;
+    line-height: 1.4;
+  }
+
+  .level-workspace .level-page-heading .page-heading p {
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .level-workspace .source-line {
+    font-size: 12px;
+    line-height: 1.6;
+    gap: 5px;
+    margin-bottom: 12px;
+  }
+
+  .level-workspace .source-tag,
+  .level-workspace .source-line-divider {
+    display: none;
+  }
+
+  .level-workspace .compact-task-panel {
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+
+  .level-workspace .compact-task-panel > div:first-child {
+    min-width: 0;
+  }
+
+  .level-workspace .panel-title h2,
+  .level-workspace .panel-title h3 {
+    font-size: 16px;
+  }
+
+  .level-workspace .task-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #6f5c7c;
+  }
+
+  .level-workspace .task-expanded .task-text {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+  }
+
+  .level-workspace .target-structure {
+    width: 100px;
+    min-width: 100px;
+    padding-left: 6px;
+  }
+
+  .level-workspace .target-structure > span {
+    font-size: 12px;
+  }
+
+  .level-workspace .target-structure .molecule {
+    width: 95px;
+    height: 100px;
+  }
+
+  .level-workspace .mobile-task-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 10px;
+    margin-top: 3px;
+  }
+
+  .level-workspace .mobile-task-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    padding: 5px 0;
+    font-size: 14px;
+    color: #82609c;
+  }
+
+  .level-workspace .task-expanded .mobile-task-actions button:first-child svg {
+    transform: rotate(180deg);
+  }
+
+  .level-workspace .editor-tabs {
+    gap: 12px;
+    padding: 0 12px;
+  }
+
+  .level-workspace .editor-tabs > button {
+    min-height: 52px;
+    padding: 12px 0;
+    font-size: 14px;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  .level-workspace .editor-tabs > button.reset-button {
+    font-size: 13px;
+  }
+
+  .level-workspace .canvas-toolbar {
+    min-height: 52px;
+    padding: 5px 12px;
+  }
+
+  .level-workspace .canvas-toolbar > div:first-child {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .level-workspace .canvas-tool {
+    padding: 8px;
+    font-size: 14px;
+    gap: 6px;
+  }
+
+  .level-workspace .canvas-tool svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .level-workspace .zoom-tools,
+  .level-workspace .canvas-pan-note {
+    display: none;
+  }
+
+  .level-workspace .canvas-expanded {
+    position: static;
+    inset: auto;
+    box-shadow: none;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    display: block;
+  }
+
+  .level-workspace .flow-scroll,
+  .level-workspace .canvas-expanded .flow-scroll {
+    display: block;
+    padding: 16px 14px;
+    overflow: visible;
+  }
+
+  .level-workspace .flow-scale-wrapper {
+    width: 100% !important;
+    height: auto !important;
+    transition: none;
+  }
+
+  .level-workspace .flow-grid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    height: auto;
+    padding: 0;
+    transform: none !important;
+  }
+
+  .level-workspace .flow-node {
+    width: 100%;
+    max-width: 400px;
+    min-height: 190px;
+    height: auto;
+    padding: 32px 10px 29px;
+    flex-shrink: 0;
+  }
+
+  .level-workspace .flow-node .molecule {
+    width: min(100%, 280px);
+    height: 138px;
+  }
+
+  .level-workspace .flow-node-label {
+    top: 12px;
+    left: 14px;
+    right: 14px;
+    font-size: 14px;
+    letter-spacing: 0;
+    color: #856397;
+  }
+
+  .level-workspace .start-node {
+    min-height: 155px;
+    padding-top: 25px;
+    padding-bottom: 22px;
+  }
+
+  .level-workspace .start-node .molecule {
+    height: 112px;
+  }
+
+  .level-workspace .start-node-name {
+    font-size: 11px;
+  }
+
+  .level-workspace .empty-structure strong {
+    font-size: 16px;
+    font-weight: 500;
+  }
+
+  .level-workspace .empty-structure small {
+    font-size: 17px;
+  }
+
+  .level-workspace .node-edit-affordance {
+    bottom: 8px;
+    font-size: 14px;
+    color: #89679c;
+  }
+
+  .level-workspace .flow-arrow-position {
+    width: 100%;
+    max-width: 400px;
+    padding: 16px 0;
+  }
+
+  .level-workspace .flow-arrow,
+  .level-workspace .flow-arrow.direction-down {
+    display: grid;
+    width: 100%;
+    height: auto;
+    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    gap: 8px 12px;
+    align-items: stretch;
+  }
+
+  .level-workspace .arrow-step-label,
+  .level-workspace .direction-down .arrow-step-label {
+    position: static;
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: .5px;
+    text-align: left;
+    color: #79598e;
+  }
+
+  .level-workspace .flow-arrow > label,
+  .level-workspace .flow-arrow.direction-down > label {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border-style: solid;
+    border-color: #e4d8ed;
+    background: #fff;
+  }
+
+  .level-workspace .flow-arrow > label:first-of-type {
+    grid-row: 2;
+  }
+
+  .level-workspace .flow-arrow > label:last-of-type {
+    grid-row: 3;
+  }
+
+  .level-workspace .flow-field-label {
+    display: block;
+    font-size: 12px;
+    color: #826d91;
+    line-height: 1.5;
+    margin-bottom: 2px;
+  }
+
+  .level-workspace .flow-arrow textarea,
+  .level-workspace .flow-arrow.direction-down textarea {
+    width: 100%;
+    min-height: 52px;
+    height: 52px;
+    padding: 2px 0;
+    font-size: 16px;
+    line-height: 1.5;
+    text-align: left;
+    color: #624975;
+    resize: vertical;
+  }
+
+  .level-workspace .flow-arrow textarea::placeholder {
+    font-size: 16px;
+    color: #ac97ba;
+  }
+
+  .level-workspace .flow-arrow-line,
+  .level-workspace .flow-arrow.direction-down .flow-arrow-line {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    align-self: stretch;
+    height: auto;
+    min-height: 140px;
+  }
+
+  .level-workspace .flow-direction-desktop {
+    display: none;
+  }
+
+  .level-workspace .flow-arrow-line .flow-direction-mobile {
+    display: block;
+    width: 24px;
+    height: 130px;
+  }
+
+  .level-workspace .flow-canvas-note {
+    order: -1;
+    width: 100%;
+    max-width: 400px;
+    padding: 0 0 12px;
+  }
+
+  .level-workspace .canvas-legend {
+    font-size: 14px;
+    color: #826a94;
+  }
+
+  .level-workspace .flow-canvas-note p,
+  .level-workspace .flow-canvas-note > span:last-child {
+    display: none;
+  }
+
+  .level-workspace .canvas-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 16px 14px;
+  }
+
+  .level-workspace .canvas-footer .button {
+    min-height: 48px;
+    padding: 12px;
+    font-size: 16px;
+  }
+
+  .level-workspace .canvas-footer > span {
+    justify-content: center;
+    font-size: 12px;
+    color: #8a7498;
+  }
+
+  .level-workspace .assessment-notice {
+    font-size: 14px;
+    line-height: 1.8;
+    padding: 0 14px 16px;
+    color: #806d8d;
+  }
+
+  .level-workspace .play-layout,
+  .level-workspace .play-support {
+    gap: 16px;
+  }
+
+  .level-workspace .play-support {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .level-workspace .mobile-return-to-canvas {
+    display: inline-flex;
+  }
+
+  .level-workspace .information-box,
+  .level-workspace .editor-panel {
+    scroll-margin-top: 16px;
+  }
+
+  .level-workspace .information-box summary,
+  .level-workspace .source-disclosure summary {
+    padding: 12px 14px;
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  .level-workspace .information-box ol,
+  .level-workspace .source-disclosure > div,
+  .level-workspace .source-disclosure a,
+  .level-workspace .assistant-intro,
+  .level-workspace .hint-item strong,
+  .level-workspace .hint-item p,
+  .level-workspace .hint-item > div > span,
+  .level-workspace .hint-rating,
+  .level-workspace .warmup-panel > p,
+  .level-workspace .warmup-note,
+  .level-workspace .warmup-feedback,
+  .level-workspace .warmup-options button {
+    font-size: 14px;
+    line-height: 1.8;
+  }
+
+  .level-workspace .hint-button {
+    min-height: 48px !important;
+    font-size: 14px !important;
+  }
+
+  .level-workspace .hint-number {
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+  }
+
+  .level-workspace .warmup-options button {
+    padding: 12px;
+    min-height: 48px;
+  }
+
+  .level-workspace .warmup-options button > span,
+  .level-workspace .warmup-panel .panel-title > span {
+    font-size: 14px;
+  }
+
+  .level-workspace .explanation-content {
+    padding: 16px 14px;
+  }
+
+  .level-workspace .reference-heading {
+    font-size: 14px;
+  }
+
+  .level-workspace .reference-heading h3 {
+    font-size: 16px;
+  }
+
+  .level-workspace .reference-heading > span {
+    margin-left: 0;
+    font-size: 12px;
+  }
+
+  .level-workspace .reference-flow-scroll {
+    overflow: visible;
+    margin-top: 14px;
+  }
+
+  .level-workspace .reference-flow,
+  .level-workspace .reference-pair {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    align-items: center;
+  }
+
+  .level-workspace .reference-flow {
+    padding: 12px;
+  }
+
+  .level-workspace .reference-node {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .level-workspace .reference-node .molecule {
+    width: 100%;
+    height: 170px;
+  }
+
+  .level-workspace .reference-node > span {
+    font-size: 14px;
+    color: #8a6b9e;
+  }
+
+  .level-workspace .reference-arrow,
+  .level-workspace .mini-reaction-arrow {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 5px 12px;
+    width: 100%;
+    max-width: 300px;
+    padding: 18px 6px;
+    font-size: 14px;
+    text-align: left;
+    line-height: 1.7;
+  }
+
+  .level-workspace .reference-arrow > span,
+  .level-workspace .mini-reaction-arrow > span {
+    grid-column: 2;
+    max-width: none;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .level-workspace .reference-arrow > span:first-child,
+  .level-workspace .mini-reaction-arrow > span:first-child {
+    grid-row: 1;
+  }
+
+  .level-workspace .reference-arrow > span:last-child,
+  .level-workspace .mini-reaction-arrow > span:last-child {
+    grid-row: 2;
+  }
+
+  .level-workspace .reference-arrow > svg,
+  .level-workspace .mini-reaction-arrow > svg {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    transform: rotate(90deg);
+    justify-self: center;
+    align-self: center;
+    width: 56px;
+    height: 24px;
+  }
+
+  .level-workspace .retrosynthesis p,
+  .level-workspace .explanation-step p,
+  .level-workspace .explanation-overall > p,
+  .level-workspace .explanation-overall ul,
+  .level-workspace .pitfall {
+    font-size: 14px;
+    line-height: 1.9;
+    color: #756180;
+  }
+
+  .level-workspace .explanation-step {
+    position: relative;
+    display: block;
+    padding-top: 20px;
+  }
+
+  .level-workspace .step-number {
+    position: absolute;
+    top: 17px;
+    left: 0;
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+
+  .level-workspace .explanation-step h3 {
+    padding-left: 38px;
+    min-height: 30px;
+    font-size: 15px;
+    gap: 3px;
+  }
+
+  .level-workspace .explanation-step h3 > span {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .level-workspace .explanation-reaction {
+    flex-direction: column;
+    padding: 12px 0;
+  }
+
+  .level-workspace .explanation-reaction > .molecule {
+    width: 100%;
+    max-width: 320px;
+    height: 170px;
+  }
+
+  .level-workspace .explanation-overall h3,
+  .level-workspace .explanation-overall h4 {
+    font-size: 16px;
+  }
+
+  .level-workspace .explanation-content > .button {
+    font-size: 14px;
+    width: 100%;
+  }
+
+  .level-workspace .inline-confirm {
+    font-size: 14px;
+    padding: 16px 14px;
+  }
+
+  .level-workspace .inline-confirm p {
+    font-size: 14px;
+  }
+
+  .level-workspace .inline-confirm .button {
+    min-height: 44px;
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+
+  .level-workspace .assessment-result {
+    padding: 16px 14px;
+    gap: 10px;
+    scroll-margin-top: 20px;
+  }
+
+  .level-workspace .assessment-result h3 {
+    font-size: 19px;
+  }
+
+  .level-workspace .assessment-result p,
+  .level-workspace .assessment-score,
+  .level-workspace .assessment-actions .button {
+    font-size: 14px;
+  }
+
+  .level-workspace .assessment-actions .button {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .level-workspace .flow-assessment-breakdown {
+    padding: 0 14px 16px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .level-workspace .flow-assessment-breakdown details,
+  .level-workspace .flow-assessment-breakdown p,
+  .level-workspace .flow-assessment-breakdown details > div {
+    font-size: 14px;
+  }
+
+  .level-workspace .flow-assessment-breakdown summary {
+    gap: 5px;
+  }
+
+  .level-workspace .flow-assessment-breakdown summary > span:last-child {
+    font-size: 12px;
+  }
+
+  .level-workspace .level-note > button,
+  .level-workspace .level-note > label > span {
+    font-size: 14px;
+  }
+
+  .level-workspace .level-note textarea {
+    font-size: 16px;
+    line-height: 1.7;
+  }
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { createLevelProgress, formatStudyDate, readProgress, recordCompletion, writeProgress } from '../lib/game'
+import { createLevelProgress, formatStudyDate, readProgress, recordCompletion, writeProgress } from '../lib/progress'
 import type { AnswerRow, Assessment, GameProgress, Level, LevelProgress } from '../types'
 
 function subscribeRoute(callback: () => void) {
