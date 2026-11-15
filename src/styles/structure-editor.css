@@ -72,7 +72,7 @@
 .handdraw-empty { fill: #9780a5; font: 13px Arial, sans-serif; }
 .handdraw-empty path { fill: none; stroke: #bba6ce; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .handdraw-replacement-note { margin: 8px 22px 12px; color: #897295; font-size: 12px; line-height: 1.5; flex-shrink: 0; }
-.handdraw-recognition-feedback { margin: 0 22px 8px; color: #705385; background: #f7f2fc; border-radius: 7px; padding: 7px 10px; font-size: 12px; line-height: 1.5; flex-shrink: 0; max-height: 100px; overflow-y: auto; }
+.handdraw-recognition-feedback { margin: 0 22px 8px; color: #705385; background: #f7f2fc; border-radius: 7px; padding: 7px 10px; font-size: 12px; line-height: 1.5; flex-shrink: 0; max-height: 150px; overflow-y: auto; }
 .handdraw-recognition-feedback p { margin: 0; }
 .handdraw-recognition-feedback summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: #925c42; }
 .handdraw-recognition-feedback ul { padding-left: 20px; }

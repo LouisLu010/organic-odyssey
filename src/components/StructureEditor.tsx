@@ -48,6 +48,23 @@ function nearestAtom(graph: EditorGraph, point: Point, zoom: number, exclude = -
   return result
 }
 
+const ELEMENT_NAMES: Readonly<Record<string, string>> = {
+  C: '碳', H: '氢', O: '氧', N: '氮', S: '硫', P: '磷', F: '氟', Cl: '氯', Br: '溴', I: '碘',
+  B: '硼', Si: '硅', Mg: '镁', Li: '锂', Na: '钠', K: '钾', Ca: '钙', Al: '铝', Fe: '铁',
+  Zn: '锌', Cu: '铜', Ag: '银', Ba: '钡', Mn: '锰', Ni: '镍',
+}
+
+/** 识别结果的一句话摘要：每种元素各几个原子、几根键、其中多少双/三键。 */
+function describeStructure(graph: EditorGraph): string {
+  const counts = new Map<string, number>()
+  for (const atom of graph.atoms) counts.set(atom.element, (counts.get(atom.element) ?? 0) + 1)
+  const atomsText = [...counts.entries()].map(([element, count]) => `${count} 个${ELEMENT_NAMES[element] ?? element}`).join('、')
+  const doubleBonds = graph.bonds.filter(bond => bond.order === 2).length
+  const tripleBonds = graph.bonds.filter(bond => bond.order === 3).length
+  const extras = [doubleBonds ? `${doubleBonds} 根双键` : '', tripleBonds ? `${tripleBonds} 根三键` : ''].filter(Boolean)
+  return `已识别：${atomsText}，${graph.bonds.length} 条键${extras.length ? `（含${extras.join('、')}）` : ''}。`
+}
+
 function atomLabel(atom: EditorAtom, index: number, graph: EditorGraph): { text: string; hydrogens: number; charge: string } {
   const bonds = graph.bonds.filter(bond => bond.from === index || bond.to === index)
   const valence = bonds.reduce((sum, bond) => sum + bond.order, 0)
@@ -140,7 +157,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
 
   function recognizeDrawing() {
     try {
-      const result = recognizeHanddraw(ink.strokes)
+      const result = recognizeHanddraw(ink.strokes, { maxStrokes: 512, maxPoints: 30000 })
       // 先验证成键数，再交给原画板检查和补充原子，不直接提交答案。
       serializeEditorGraph(result.graph)
       const arranged = layoutEditorGraph(result.graph)
@@ -150,10 +167,10 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
       setInk({ strokes: [], future: [] })
       setMode('point')
       setDiscardPrompt(false)
-      setRecognitionNotice([`已整理：${arranged.atoms.length} 个碳、${arranged.bonds.length} 条键。请补原子并核对键级。`, ...result.warnings])
+      setRecognitionNotice([`${describeStructure(arranged)}请核对元素、电荷与键级后保存。`, ...result.warnings])
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : ''
-      setError(cause instanceof HanddrawRecognitionError ? `${cause.message} 原笔迹已保留。` : /VALENCE|valence/i.test(message) ? '识别后有碳原子成键过多。请检查交叉、分支和重复笔迹，再试一次。' : '还没识别清楚。请将每根键画直一些、端点靠拢；字母和圆圈请改用原子或苯环工具。原笔迹已保留。')
+      setError(cause instanceof HanddrawRecognitionError ? `${cause.message} 原绘画已保留。` : /VALENCE|valence/i.test(message) ? '识别后有原子成键过多。请检查交叉、分支、重复线条和元素标注，再试一次。' : '还没识别清楚。请把键画直、端点靠近，元素符号写清楚；双键画两条平行线，苯环在六元环内画圆圈。原绘画已保留。')
     }
   }
 
@@ -345,7 +362,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
   function cancelPointers() { pointersRef.current.clear(); gestureRef.current = null; pinchRef.current = null; suppressTapRef.current = false; setPreview(null) }
 
   function importStructure() {
-    if (pendingInk) { setError('还有未识别的笔迹，请先识别或丢弃笔迹，再导入结构。'); return }
+    if (pendingInk) { setError('画布上还有未识别的绘画，请先识别或丢弃后再导入结构。'); return }
     try {
       const next = parseEditorSmiles(importText.trim())
       serializeEditorGraph(next)
@@ -360,14 +377,14 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
   return createPortal(<div ref={backdropRef} className="structure-editor-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) requestClose() }}>
     <div className="structure-editor-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={helpId} ref={dialogRef} tabIndex={-1}>
       <header className="structure-editor-header"><div><span>键线式分子画板</span><h2 id={titleId}>{title}</h2></div><button className="structure-editor-close" aria-label="关闭分子绘图" onClick={requestClose}><X size={22} /></button></header>
-      <div className="editor-mode-switch" role="group" aria-label="绘制方式"><button type="button" aria-pressed={mode === 'point'} disabled={drawing} onClick={() => { setMode('point'); setError('') }}>点选绘制</button><button type="button" aria-pressed={mode === 'handdraw'} disabled={drawing} onClick={() => { setMode('handdraw'); setError(''); setDiscardPrompt(false) }}><PencilLine size={17} />手绘识别</button></div>
-      {discardPrompt ? <div className="editor-discard-prompt" role="alert"><p>还有未识别的笔迹，关闭后会丢失。</p><div><button type="button" onClick={() => { setDiscardPrompt(false); setMode('handdraw') }}>继续手绘</button><button type="button" onClick={onClose}>丢弃并关闭</button></div></div> : null}
-      {mode === 'point' && pendingInk ? <div className="editor-pending-ink" role="status"><span>还有 {ink.strokes.length} 笔未识别，保存前请先处理。</span><button type="button" onClick={() => { setInk({ strokes: [], future: [] }); setError(''); setDiscardPrompt(false) }}>丢弃笔迹</button></div> : null}
+      <div className="editor-mode-switch" role="group" aria-label="绘制方式"><button type="button" aria-pressed={mode === 'point'} disabled={drawing} onClick={() => { setMode('point'); setError('') }}>点选绘制</button><button type="button" aria-pressed={mode === 'handdraw'} disabled={drawing} onClick={() => { setMode('handdraw'); setError(''); setDiscardPrompt(false) }}><PencilLine size={17} />自由绘画</button></div>
+      {discardPrompt ? <div className="editor-discard-prompt" role="alert"><p>画布上还有未识别的绘画，关闭后会丢失。</p><div><button type="button" onClick={() => { setDiscardPrompt(false); setMode('handdraw') }}>继续绘画</button><button type="button" onClick={onClose}>丢弃并关闭</button></div></div> : null}
+      {mode === 'point' && pendingInk ? <div className="editor-pending-ink" role="status"><span>画布上还有未识别的绘画，保存前请先处理。</span><button type="button" onClick={() => { setInk({ strokes: [], future: [] }); setError(''); setDiscardPrompt(false) }}>丢弃绘画</button></div> : null}
       <div className="simple-editor-toolbar" hidden={mode !== 'point'} role="group" aria-label="分子绘图工具">{MAIN_TOOLS.map(item => <button key={item.value} type="button" aria-pressed={tool === item.value && !panning} className={tool === item.value && !panning ? 'selected' : ''} onClick={() => chooseTool(item.value)}>{item.value === 'bond' ? <PencilLine size={18} /> : item.value === 'benzene' ? BENZENE_ICON : item.value === 'erase' ? <Eraser size={18} /> : null}{item.label}</button>)}<select aria-label="更多原子和环工具" value={MORE_TOOLS.some(item => item.value === tool) ? tool : ''} onChange={event => chooseTool(event.target.value as Tool)}><option value="" disabled>更多</option>{MORE_TOOLS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
       <div className="simple-editor-action-row" hidden={mode !== 'point'}><div className="bond-order-controls" role="group" aria-label="选择键型">{[1, 2, 3].map(order => <button key={order} type="button" aria-label={`使用${['单', '双', '三'][order - 1]}键`} aria-pressed={tool === 'bond' && bondOrder === order && !panning} onClick={() => { chooseTool('bond'); setBondOrder(order) }}>{['单键', '双键', '三键'][order - 1]}</button>)}</div><div className="editor-history-controls"><button type="button" aria-label="撤销一步" title="撤销（⌘/Ctrl Z）" disabled={!history.past.length} onClick={undo}><Undo2 size={20} /></button><button type="button" aria-label="重做一步" disabled={!history.future.length} onClick={redo}><Redo2 size={20} /></button></div></div>
-      <p className="simple-editor-instruction" id={helpId}>{mode === 'handdraw' ? '可连画折线，或把每根键分开画。O、N、卤素等字母请在识别后用原子工具补充。' : panning ? '拖动画布移动视野；再次点手掌即可继续画图。' : TOOL_HELP[tool] ?? `点原子替换成 ${tool}，或在空白处放入后连键。`}</p>
+      <p className="simple-editor-instruction" id={helpId}>{mode === 'handdraw' ? '自由绘画：随意画，任意笔顺、任意抬笔。六元环可以一条边一条边画，端点靠近会自动连成环；双键画平行线，苯环在六元环内画圆圈。元素/基团直接手写 O、N、Cl、OH、NH₂、COOH 等。' : panning ? '拖动画布移动视野；再次点手掌即可继续画图。' : TOOL_HELP[tool] ?? `点原子替换成 ${tool}，或在空白处放入后连键。`}</p>
       {mode === 'point' && recognitionNotice.length ? <div className="handdraw-recognition-feedback" role="status"><p>{recognitionNotice[0]}</p>{recognitionNotice.length > 1 ? <details><summary>有 {recognitionNotice.length - 1} 项需要检查</summary><ul>{recognitionNotice.slice(1).map((notice, index) => <li key={index}>{notice}</li>)}</ul></details> : null}</div> : null}
-      {mode === 'handdraw' ? <><div className="handdraw-action-row"><span aria-live="polite">已画 {ink.strokes.length} 笔</span><div className="editor-history-controls"><button type="button" aria-label="撤销一笔" disabled={drawing || !ink.strokes.length} onClick={undo}><Undo2 size={20} /></button><button type="button" aria-label="重做一笔" disabled={drawing || !ink.future.length} onClick={redo}><Redo2 size={20} /></button></div></div><div className="handdraw-canvas-frame"><HanddrawCanvas strokes={ink.strokes} onDrawingChange={setDrawing} onStroke={stroke => { if (ink.strokes.length >= 128) { setError('笔迹较多，请先识别，或撤销多余的笔画。'); return } setInk(previous => ({ strokes: [...previous.strokes, stroke], future: [] })); setError('') }} /></div><p className="handdraw-replacement-note">{graph.atoms.length ? '识别后替换当前结构，可用撤销恢复。' : '端点和拐角默认为碳，暂不识别手写字母。'}</p></> : null}
+      {mode === 'handdraw' ? <><div className="handdraw-action-row"><span>自由绘画 · 任意笔顺</span><div className="editor-history-controls"><button type="button" aria-label="撤销绘画" disabled={drawing || !ink.strokes.length} onClick={undo}><Undo2 size={20} /></button><button type="button" aria-label="重做绘画" disabled={drawing || !ink.future.length} onClick={redo}><Redo2 size={20} /></button></div></div><div className="handdraw-canvas-frame"><HanddrawCanvas strokes={ink.strokes} onDrawingChange={setDrawing} onStroke={stroke => { if (ink.strokes.length >= 512) { setError('绘画内容较多，请先识别或清空部分内容。'); return } setInk(previous => ({ strokes: [...previous.strokes, stroke], future: [] })); setError('') }} /></div><p className="handdraw-replacement-note">{graph.atoms.length ? '自由绘画按整张画布识别，识别后替换当前结构，可用撤销恢复。' : '自由绘画：碳骨架端点默认碳；手写元素/基团和芳环圆圈都会转成原子与键。环可以分开画，顶点端点靠近会自动连成环。'}</p></> : null}
       <div className="structure-editor-canvas-frame" hidden={mode !== 'point'}><svg ref={svgRef} className={`simple-molecule-canvas tool-${panning ? 'pan' : tool}`} viewBox={viewBox} role="group" aria-label="键线式分子绘图画布" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={cancelPointers}>
         {!graph.atoms.length ? <g className="simple-canvas-empty" pointerEvents="none"><text x={camera.center.x} y={camera.center.y - 12 * labelScale} textAnchor="middle" fontSize={17 * labelScale}>点一下放入碳原子</text><text x={camera.center.x} y={camera.center.y + 16 * labelScale} textAnchor="middle" fontSize={13 * labelScale}>再点原子延长，或选择苯环</text></g> : null}
         {graph.bonds.map((bond, index) => {
@@ -384,7 +401,7 @@ export default function StructureEditor({ initialSmiles, title, onSave, onClose 
       <div className="simple-editor-bottom-tools" hidden={mode !== 'point'}><button type="button" onClick={() => { try { const next = layoutEditorGraph(graph); commit(next); fit(next) } catch (cause) { setError(structureError(cause)) } }} disabled={!graph.atoms.length}><Sparkles size={17} />整理结构</button><span>两指缩放、平移 · 端点和拐角是碳</span></div>
       <details ref={advancedRef} className="structure-editor-advanced" hidden={mode !== 'point' || pendingInk}><summary>高级选项：导入 SMILES（可选）<ChevronDown size={16} /></summary><div className="structure-editor-import"><label htmlFor={importId}>SMILES 结构字符串</label><div><input id={importId} value={importText} onChange={event => setImportText(event.target.value)} placeholder="例如：CCO" autoComplete="off" spellCheck={false} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); importStructure() } }} /><button type="button" onClick={importStructure}><ArrowDownToLine size={16} />导入画布</button></div></div></details>
       {error ? <p className="structure-editor-error" id={errorId} role="alert">{error}</p> : null}
-      <footer className="structure-editor-footer"><button className="structure-editor-clear" aria-label={mode === 'handdraw' ? '清空手绘笔迹' : '清空画布'} onClick={() => { if (mode === 'handdraw') { setInk({ strokes: [], future: [] }); setError(''); setDiscardPrompt(false) } else { commit(EMPTY_GRAPH); fit(EMPTY_GRAPH) } }} disabled={mode === 'handdraw' ? drawing || !ink.strokes.length : !graph.atoms.length}><Eraser size={18} /><span>{mode === 'handdraw' ? '清空笔迹' : '清空'}</span></button><div><span className="structure-editor-stereo-note">忽略立体异构</span>{mode === 'handdraw' ? <button className="button primary" disabled={drawing || !ink.strokes.length} onClick={recognizeDrawing} aria-describedby={error ? errorId : undefined}><Sparkles size={18} />识别并整理</button> : pendingInk ? <button className="button primary" onClick={() => setMode('handdraw')}><PencilLine size={18} />返回手绘</button> : <button className="button primary" onClick={() => { try { onSave(serializeEditorGraph(graph)) } catch (cause) { setError(structureError(cause)) } }} aria-describedby={error ? errorId : undefined}><Check size={18} />保存结构</button>}</div></footer>
+      <footer className="structure-editor-footer"><button className="structure-editor-clear" aria-label={mode === 'handdraw' ? '清空绘画' : '清空画布'} onClick={() => { if (mode === 'handdraw') { setInk({ strokes: [], future: [] }); setError(''); setDiscardPrompt(false) } else { commit(EMPTY_GRAPH); fit(EMPTY_GRAPH) } }} disabled={mode === 'handdraw' ? drawing || !ink.strokes.length : !graph.atoms.length}><Eraser size={18} /><span>{mode === 'handdraw' ? '清空绘画' : '清空'}</span></button><div><span className="structure-editor-stereo-note">忽略立体异构</span>{mode === 'handdraw' ? <button className="button primary" disabled={drawing || !ink.strokes.length} onClick={recognizeDrawing} aria-describedby={error ? errorId : undefined}><Sparkles size={18} />识别并整理</button> : pendingInk ? <button className="button primary" onClick={() => setMode('handdraw')}><PencilLine size={18} />返回自由绘画</button> : <button className="button primary" onClick={() => { try { onSave(serializeEditorGraph(graph)) } catch (cause) { setError(structureError(cause)) } }} aria-describedby={error ? errorId : undefined}><Check size={18} />保存结构</button>}</div></footer>
     </div>
   </div>, document.body)
 }
