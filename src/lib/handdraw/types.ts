@@ -17,7 +17,13 @@ export interface HanddrawOptions {
 }
 
 /** 解析后的识别参数，所有字段必有值。 */
-export type Settings = Required<HanddrawOptions>
+export type Settings = Required<HanddrawOptions> & {
+  /**
+   * 入口归一化倍数（内部字段）：画布像素 × inkScale = 识别坐标。
+   * 少数与手指/笔尖精度有关的阈值需要保留“画布像素”下限，用它换算。缺省为 1。
+   */
+  inkScale?: number
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   snapDistance: 11,
@@ -66,6 +72,8 @@ export interface InkExtraction {
   scale: number
   segments: BondLine[]
   warnings: string[]
+  /** 被识别为一笔闭合环（3～8 元）的笔迹下标；文字识别据此把它们当作键线。 */
+  ringStrokes?: number[]
 }
 
 /** 手写文字笔画按空间聚成的原子标签候选。 */

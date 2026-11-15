@@ -3,6 +3,7 @@ import { assembleGraph, graphIsEmpty } from './handdraw/assemble'
 import { extractInk } from './handdraw/bonds'
 import { HanddrawRecognitionError } from './handdraw/errors'
 import { recognizeAtomLabels } from './handdraw/glyphs'
+import { normalizeInk } from './handdraw/normalize'
 import { DEFAULT_SETTINGS } from './handdraw/types'
 import type { HanddrawOptions, HanddrawPoint, HanddrawStroke, Settings } from './handdraw/types'
 
@@ -58,20 +59,28 @@ function validateStrokes(strokes: readonly (readonly HanddrawPoint[])[], setting
  * 不识别立体化学（楔形键按普通键处理），不把圆圈当作碳环。
  */
 export function recognizeHanddraw(strokes: readonly (readonly HanddrawPoint[])[], options: HanddrawOptions = {}): HanddrawRecognitionResult {
-  const settings = resolveSettings(options)
-  validateStrokes(strokes, settings)
-  const ink = strokes as readonly HanddrawStroke[]
+  const resolved = resolveSettings(options)
+  validateStrokes(strokes, resolved)
+  // 统一绘画尺寸与采样密度后再识别，识别结果按同一比例换算回画布坐标。
+  const normalized = normalizeInk(strokes as readonly HanddrawStroke[], resolved, options)
+  const ink = normalized.strokes
+  const settings = normalized.settings
 
   const extraction = extractInk(ink, settings)
   if (extraction.segments.length > MAX_SEGMENTS) {
     throw new HanddrawRecognitionError('LIMIT_EXCEEDED', '识别出的线段太多，请减少绘画内容或分次识别。')
   }
-  const labels = recognizeAtomLabels({ strokes: ink, scale: extraction.scale, settings })
+  const labels = recognizeAtomLabels({ strokes: ink, scale: extraction.scale, settings, bondStrokes: extraction.ringStrokes })
   const assembly = assembleGraph({ strokes: ink, extraction, labels, settings })
   if (graphIsEmpty(assembly.graph)) {
     const reason = assembly.warnings[0] ?? labels.warnings[0] ?? extraction.warnings[0]
     throw new HanddrawRecognitionError('UNRECOGNIZED', reason ?? '没有识别出原子或化学键，请画清楚直线、折线、环，或手写元素符号。')
   }
   const warnings = [...new Set([...extraction.warnings, ...labels.warnings, ...assembly.warnings])]
-  return { graph: assembly.graph, warnings }
+  const factor = normalized.factor
+  const graph: EditorGraph = factor === 1 ? assembly.graph : {
+    atoms: assembly.graph.atoms.map(atom => ({ ...atom, x: atom.x / factor, y: atom.y / factor })),
+    bonds: assembly.graph.bonds,
+  }
+  return { graph, warnings }
 }
