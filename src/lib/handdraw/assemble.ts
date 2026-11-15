@@ -121,6 +121,8 @@ function labelAttachTolerance(label: AtomLabel, settings: Settings, scale: numbe
 
 /** 圆圈半径超过该比例时视为芳环记号候选，不吸附到键端点（避免把苯环内圆圈建成氧原子）。 */
 const AROMATIC_CIRCLE_RADIUS_FACTOR = 0.42
+/** 键端吸附圆圈 O 时，键延长方向与“端点→圆心”方向夹角余弦下限（约 70°）。 */
+const CIRCLE_ATTACH_COSINE = 0.34
 
 function elementValence(element: string): number {
   return MAX_VALENCE[element] ?? 4
@@ -330,6 +332,17 @@ function clusterEndpoints(
   return { parents: points.map((_, index) => root(index)), farMerges }
 }
 
+/** 圆圈中心是否落在键 from→end 延长方向约 70° 的扇形内（端点在圆内时视为指向）。 */
+function pointsToward(from: HanddrawPoint, end: HanddrawPoint, target: HanddrawPoint): boolean {
+  const bondX = end.x - from.x
+  const bondY = end.y - from.y
+  const targetX = target.x - end.x
+  const targetY = target.y - end.y
+  const lengths = Math.hypot(bondX, bondY) * Math.hypot(targetX, targetY)
+  if (!(lengths > 1e-9)) return true
+  return (bondX * targetX + bondY * targetY) / lengths >= CIRCLE_ATTACH_COSINE
+}
+
 /** 为每个键端点找最近的原子标签，距离在标签允许范围内才算连接。 */
 function attachLabelsToEndpoints(
   endpoints: readonly HanddrawPoint[],
@@ -339,13 +352,17 @@ function attachLabelsToEndpoints(
 ): (number | undefined)[] {
   const tolerances = labels.map(label => labelAttachTolerance(label, settings, scale))
   const attachable = labels.map(label => label.shape !== 'circle' || labelRadius(label) <= scale * AROMATIC_CIRCLE_RADIUS_FACTOR)
-  return endpoints.map(point => {
+  return endpoints.map((point, endpointIndex) => {
+    // 端点 2k、2k+1 属于同一根键；由另一端指向本端的方向就是键的延伸方向。
+    const partner = endpoints[endpointIndex ^ 1]
     let best = -1
     let bestDistance = Infinity
     labels.forEach((label, index) => {
       if (!attachable[index]) return
       const separation = pointBoundsDistance(point, label.bounds)
       if (separation > tolerances[index] || separation >= bestDistance) return
+      // 圆圈 O 必须位于键的延长线一侧：环顶点旁边的芳环内圈只是贴得近，不是键连着的氧原子。
+      if (label.shape === 'circle' && partner && !pointsToward(partner, point, boundsCenter(label.bounds))) return
       best = index
       bestDistance = separation
     })
@@ -687,8 +704,10 @@ export function assembleGraph(input: AssemblyInput): AssemblyResult {
   }
   const clusterPoints = unattached.map(entry => entry.point)
   const snap = snapTolerance(settings, scale)
-  // 分笔画环的顶点间隙：至少 26px，随尺度增长，最多 40px。
-  const vertexGap = Math.min(48, Math.max(30, scale * 0.9))
+  // 分笔画环的顶点间隙：约 0.9 倍键长（30～48px）。抬笔留下的空隙与手指精度有关，
+  // 画得很小时再保留“画布上 30px”的下限（最多 1.3 倍键长），避免缩放后小图的环连不上。
+  const inkScale = Number.isFinite(settings.inkScale) && settings.inkScale! > 0 ? settings.inkScale! : 1
+  const vertexGap = Math.max(Math.min(48, Math.max(30, scale * 0.9)), Math.min(30 * inkScale, scale * 1.3))
   const cluster = clusterEndpoints(
     clusterPoints, originalIndex, clusterBondOfEndpoint, bonds, snap, vertexGap, partnerRef,
   )

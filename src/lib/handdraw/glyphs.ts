@@ -25,12 +25,24 @@ export interface GlyphRecognitionInput {
   /** 估计的键长像素尺度。 */
   scale: number
   settings: Settings
+  /** 键线分析已确认是闭合环的笔迹下标：直接按键线处理，不参与文字聚类。 */
+  bondStrokes?: readonly number[]
 }
 
 /** 低于该置信度的标签不占用笔画，但仍会返回给界面提示。 */
 const CLAIM_CONFIDENCE = 0.55
 /** 低于该置信度的“最佳猜测”不再当作标签输出，只给无法识别的提示。 */
 const REPORT_CONFIDENCE = 0.3
+/** 旋转搜索：每偏转 0.2 弧度加的匹配误差惩罚，平局时偏向直立解读。 */
+const ROTATION_PENALTY = 0.015
+/**
+ * 旋转搜索角度（弧度）。模板匹配对倾斜很敏感（偏 0.1 弧度误差就翻倍），步长取 0.1；
+ * 先试直立，再由小到大交替试两侧。
+ */
+const LABEL_ROTATIONS = [0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4]
+const CHAR_ROTATIONS = [0, 0.1, -0.1, 0.2, -0.2]
+/** 直立匹配误差不超过该值视为几乎完美，跳过旋转搜索（也省去大部分耗时）。 */
+const EXACT_MATCH_RAW = 0.05
 /** 匹配栅格尺寸（按字高归一化后，字高占 26 格）。 */
 const GRID_WIDTH = 128
 const GRID_HEIGHT = 32
@@ -1263,12 +1275,13 @@ function charLayoutVerification(ink: GroupInk, text: string): number {
   return clamp01(total / layout.chars.length)
 }
 
-/** 标签整组匹配：先直立匹配，置信度不够时再尝试轻微旋转。 */
+/** 标签整组匹配：在 ±0.4 弧度内逐档旋转，取“误差 + 旋转惩罚”最小的解读；直立已几乎完美时不再旋转。 */
 function matchLabelInk(ink: GroupInk, scale: number): LabelMatch | undefined {
   const center = boundsCenter(ink.bounds)
-  const rotations = [0, 0.2, -0.2, 0.38, -0.38]
+  const rotations = LABEL_ROTATIONS
   const heightRatio = ink.height / scale
   let best: LabelMatch | undefined
+  let bestScore = Infinity
   for (const rotation of rotations) {
     const grid = prepareCandidateGrid(ink, center, rotation)
     if (!grid) break
@@ -1283,11 +1296,22 @@ function matchLabelInk(ink: GroupInk, scale: number): LabelMatch | undefined {
       contenders.sort((left, right) => left.raw - right.raw || (left.text < right.text ? -1 : left.text > right.text ? 1 : 0))
       for (let index = 0; index < contenders.length; index += 1) entries[index] = contenders[index]
     }
-      const match = buildLabelMatch(entries, heightRatio)
-    if (!best || match.confidence > best.confidence + 1e-9) best = match
-    if (best.confidence >= 0.82) break
+    const match = buildLabelMatch(entries, heightRatio)
+    // 按“匹配误差 + 旋转惩罚”选最优角度：直立时就能高置信匹配成别的字（如斜写的 N 像 Al），
+    // 不能因此提前停止；只有几乎完美的匹配才提前结束。
+    const score = match.raw + rotationPenalty(rotation)
+    if (score < bestScore - 1e-9) {
+      best = match
+      bestScore = score
+    }
+    if (match.raw <= EXACT_MATCH_RAW && rotation === 0) break
   }
   return best
+}
+
+/** 旋转越大越不像正常书写，给匹配误差加一点惩罚，平局时偏向直立解读。 */
+function rotationPenalty(rotation: number): number {
+  return ROTATION_PENALTY * Math.abs(rotation) / 0.2
 }
 
 /* ------------------------------------------------------------------------- *
@@ -1655,10 +1679,10 @@ function findSignUnits(strokes: readonly StrokeInfo[], scale: number): SignUnit[
     for (const stroke of strokes) {
       if (unit.strokes.includes(stroke)) continue
       const overlap = boundsOverlapRatio(unit.bounds, stroke.bounds)
-      const gapX = horizontalGap(unit.bounds, stroke.bounds)
-      if (overlap.x > 0.35 || gapX <= touchGap) {
-              return false
-      }
+      // 用二维间隙判断“贴着”：写在字母右上角的 +（上标）横向可能略有重叠，但上下是分开的；
+      // H、4 的横笔则与竖笔相交（间隙为 0）或横向大幅重叠，仍会被排除。
+      const gap = boundsGap(unit.bounds, stroke.bounds)
+      if (overlap.x > 0.35 || gap <= touchGap) return false
     }
     return true
   })
@@ -1714,9 +1738,10 @@ function segmentStrokesByX(strokes: readonly StrokeInfo[], scale: number): Strok
 /** 单个字符匹配（字符模板），返回最佳字符与置信度。 */
 function matchCharInk(ink: GroupInk, scale: number): { char: string; confidence: number; raw: number } | undefined {
   const center = boundsCenter(ink.bounds)
-  const rotations = [0, 0.2, -0.2]
+  const rotations = CHAR_ROTATIONS
   const heightRatio = ink.height / scale
   let best: { char: string; confidence: number; raw: number } | undefined
+  let bestScore = Infinity
   for (const rotation of rotations) {
     const grid = prepareCandidateGrid(ink, center, rotation)
     if (!grid) break
@@ -1727,8 +1752,12 @@ function matchCharInk(ink: GroupInk, scale: number): { char: string; confidence:
     const sizeFactor = glyphSizeFactor(heightRatio)
     const confidence = confidenceFromRaw(top.raw, second ? second.raw : top.raw + 0.2, sizeFactor)
     const candidate = { char: top.text, confidence, raw: top.raw }
-    if (!best || candidate.confidence > best.confidence + 1e-9) best = candidate
-    if (best.confidence >= 0.8) break
+    const score = top.raw + rotationPenalty(rotation)
+    if (score < bestScore - 1e-9) {
+      best = candidate
+      bestScore = score
+    }
+    if (top.raw <= EXACT_MATCH_RAW && rotation === 0) break
   }
   return best
 }
@@ -1948,13 +1977,17 @@ function recognizeGroup(strokes: readonly StrokeInfo[], scale: number, depth: nu
     return { labels: [], signs: [], warnings: glyphLike ? [unrecognizedWarning(strokes)] : [] }
   }
 
+  // 圆圈判定只看标签实际用到的笔画：贴着圆圈画的一根键会被剥离出去，
+  // 不能让它破坏“单笔圆圈”的几何判断（否则芳环内圈会被读成 Cl 等文字）。
+  const labelStrokes = best.usedStrokes
+  const labelInk = labelStrokes.length === strokes.length ? ink : buildGroupInk(labelStrokes)
   // 圆圈几何：闭合环一律按 O（芳环圆圈与字母 O 都走这里，装配器按尺寸区分）。
-  const loop = analyzeLoop(ink.points)
+  const loop = analyzeLoop(labelInk.points)
   const smoothLoop = !!loop
     && loop.straightRunRatio < 0.85
     && loop.rmsRatio <= 0.18
     && loop.radialStdRatio <= 0.13
-  const allStrokesCurved = strokes.every(stroke => stroke.straightness < 0.8)
+  const allStrokesCurved = labelStrokes.every(stroke => stroke.straightness < 0.8)
   // 闭合直边多边形（六边形/五边形等）是键线结构，绝不能当字母 O 剔除。
   if (loop && loop.closed && loop.radius >= 0.3 * scale
     && (loop.straightRunRatio >= 0.85
@@ -1992,8 +2025,8 @@ function recognizeGroup(strokes: readonly StrokeInfo[], scale: number, depth: nu
   }
 
   // 单笔手画内圈（开口/不规则椭圆）优先认作芳香圆圈 O，避免被读成 Cl/Fe/Ca 或低置信文字。
-  if (strokes.length === 1) {
-    const handCircle = detectHandDrawnCircle(ink, scale)
+  if (labelStrokes.length === 1) {
+    const handCircle = detectHandDrawnCircle(labelInk, scale)
     if (handCircle) {
       const matchedText = best.match.text
       const matchedConfidence = best.match.confidence
@@ -2074,7 +2107,8 @@ export function recognizeAtomLabels(input: GlyphRecognitionInput): LabelRecognit
   }
   const boundedScale = clamp(scale, 6, 600)
 
-  for (const stroke of prepared) stroke.role = decideStrokeRole(stroke, boundedScale, minBondLength)
+  const knownBonds = new Set(Array.isArray(input.bondStrokes) ? input.bondStrokes : [])
+  for (const stroke of prepared) stroke.role = knownBonds.has(stroke.index) ? 'bond' : decideStrokeRole(stroke, boundedScale, minBondLength)
   markParallelBondStrokes(prepared, boundedScale)
   // 一笔折返画出的双键/三键（U 形）整体是键线，不能进入文字聚类。
   for (const stroke of prepared) {

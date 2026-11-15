@@ -26,9 +26,15 @@ const MAX_SCALE = 140
 const CORNER_WINDOW = 5
 const CORNER_MIN_TURN = 0.28
 const CORNER_WINDOW_RATIO = 1.8
+/** 6 倍窗口转角 / 3 倍窗口转角的上限：圆弧约为 2，拐角接近 1。 */
+const CORNER_SATURATION_RATIO = 1.4
 const CORNER_CLUSTER_ARC = 6
 const SMOOTH_ITERATIONS = 2
 
+/** 一笔闭合环的平均边长至少为该倍数的 scale，才直接告知文字识别“这是键线环”。 */
+const RING_STROKE_EDGE_FACTOR = 0.7
+/** 环拐点共线合并的偏差容差（相对 scale）：手抖幅度通常在键长的 5～8% 以内。 */
+const COLLINEAR_CORNER_FACTOR = 0.1
 /** RDP 顶点后处理：方向变化小于该角度的顶点视为“浅弯”并合并。 */
 const FLATTEN_TURN = 0.35
 /** 无拐角笔迹允许的弓形程度：弦高 / 弦长，超过则视为圆弧而不是键线。 */
@@ -53,7 +59,7 @@ const BOWED_BOND_SPLIT_PATH_FACTOR = 1.35
 const MERGE_ANGLE = Math.PI / 12
 const MERGE_OVERLAP_RATIO = 0.5
 const MERGE_LENGTH_RATIO = 0.25
-const MERGE_MIN_SPACING_FACTOR = 0.07
+const MERGE_MIN_SPACING_FACTOR = 0.06
 /** 折返重描的方向余弦阈值：约 139° 以上视为“画过去又折回”。 */
 const FOLD_BACK_COSINE = -0.75
 
@@ -207,6 +213,21 @@ interface CornerCandidate {
   strength: number
 }
 
+/** 大窗口（6 倍）下方向变化是否已基本不再增长：拐角饱和，圆弧继续线性增长。 */
+function cornerSaturates(
+  points: readonly HanddrawPoint[],
+  cumulative: readonly number[],
+  arc: number,
+  wideTurn: number,
+  total: number,
+  closed: boolean,
+): boolean {
+  const window = CORNER_WINDOW * 6
+  if (closed ? total < window * 4 : arc < window || total - arc < window) return false
+  if (wideTurn < CORNER_MIN_TURN * 1.5) return false
+  return turnAtArc(points, cumulative, arc, window, closed) <= wideTurn * CORNER_SATURATION_RATIO
+}
+
 /**
  * 扫描整条折线找“局部拐角”：小窗口内方向变化明显，且 3 倍窗口不会继续同比例变大。
  * 圆弧/圆的方向变化随窗口线性增长，会被比值条件排除；折线拐角则集中在很小一段。
@@ -225,7 +246,9 @@ function findSharpCorners(rawPoints: readonly HanddrawPoint[], closed: boolean):
     const turn = turnAtArc(points, cumulative, arc, CORNER_WINDOW, closed)
     if (turn < CORNER_MIN_TURN) continue
     const wideTurn = turnAtArc(points, cumulative, arc, CORNER_WINDOW * 3, closed)
-    if (wideTurn > turn * CORNER_WINDOW_RATIO) continue
+    // 圆弧的方向变化随窗口线性增长；被手抖/稀疏采样磨圆的拐角在更大窗口下会“饱和”，
+    // 不再继续变大。满足饱和条件的仍算拐角，避免把圆角六边形整笔当成圆圈。
+    if (wideTurn > turn * CORNER_WINDOW_RATIO && !cornerSaturates(points, cumulative, arc, wideTurn, total, closed)) continue
     candidates.push({ index, arc, strength: turn })
   }
   const clusters: CornerCandidate[][] = []
@@ -286,6 +309,18 @@ function flattenVertices(points: readonly HanddrawPoint[], indices: readonly num
 
 /** 由全部笔迹估计“典型键长”，忽略字母/圆圈等短笔迹。 */
 function estimateScale(strokes: readonly HanddrawStroke[], settings: EffectiveSettings): number {
+  const raw = estimateRawScale(strokes, settings)
+  return raw === undefined ? FALLBACK_SCALE : clampScale(raw)
+}
+
+/**
+ * 不做上下限截断的键长估计，供入口做尺寸归一化；没有可用直线段时返回 undefined。
+ */
+export function estimateInkScale(strokes: readonly HanddrawStroke[], settings: Settings): number | undefined {
+  return estimateRawScale(strokes, effectiveSettings(settings))
+}
+
+function estimateRawScale(strokes: readonly HanddrawStroke[], settings: EffectiveSettings): number | undefined {
   const runs: number[] = []
   for (const stroke of strokes) {
     if (!Array.isArray(stroke)) continue
@@ -307,17 +342,17 @@ function estimateScale(strokes: readonly HanddrawStroke[], settings: EffectiveSe
       if (Number.isFinite(length) && length > 1) runs.push(length)
     }
   }
-  if (!runs.length) return FALLBACK_SCALE
+  if (!runs.length) return undefined
   runs.sort((left, right) => left - right)
   // 手写字母的笔画通常远短于键长；只在“最长的一簇”直线段里取中位数，
   // 既不会被大量字母短笔迹拉低，也不会被个别超长涂抹带偏。
   const longest = runs[runs.length - 1]
   const threshold = Math.max(longest * 0.8, Math.min(longest, settings.minBondLength))
   const selected = runs.filter(length => length >= threshold)
-  if (!selected.length) return FALLBACK_SCALE
+  if (!selected.length) return undefined
   const middle = selected.length >> 1
   const median = selected.length % 2 ? selected[middle] : (selected[middle - 1] + selected[middle]) / 2
-  return clampScale(median)
+  return Number.isFinite(median) && median > 0 ? median : undefined
 }
 
 /** 到首尾弦的最大偏离，用于区分“略微弓形的键线”和“明显圆弧”。 */
@@ -451,6 +486,54 @@ function clusterCoincidentCorners(
   return { corners: clusters.map(cluster => cluster.representative), repeatStartArc }
 }
 
+/** 环上从 start 到 end（可跨越起点）的路径点到弦 start→end 的最大距离。 */
+function closedPathDeviation(points: readonly HanddrawPoint[], start: number, end: number): number {
+  const from = points[start]
+  const to = points[end]
+  let maximum = 0
+  const visit = (index: number) => {
+    const deviation = distanceToSegment(points[index], from, to)
+    if (deviation > maximum) maximum = deviation
+  }
+  if (end > start) {
+    for (let index = start + 1; index < end; index += 1) visit(index)
+  } else {
+    for (let index = start + 1; index < points.length; index += 1) visit(index)
+    for (let index = 0; index < end; index += 1) visit(index)
+  }
+  return maximum
+}
+
+/** 逐个去掉“几乎共线”的环拐点（RDP 的逆过程），保留至少 3 个。 */
+function mergeCollinearCorners(
+  loop: readonly HanddrawPoint[],
+  corners: readonly RingCorner[],
+  scale: number,
+  settings: EffectiveSettings,
+): RingCorner[] {
+  let result = corners.slice()
+  const tolerance = Math.max(3, settings.simplifyTolerance * 0.75, scale * COLLINEAR_CORNER_FACTOR)
+  while (result.length > 3) {
+    let bestPosition = -1
+    let bestDeviation = Infinity
+    for (let position = 0; position < result.length; position += 1) {
+      const previous = result[(position - 1 + result.length) % result.length].index
+      const next = result[(position + 1) % result.length].index
+      const chord = distance(loop[previous], loop[next])
+      const deviation = closedPathDeviation(loop, previous, next)
+      // 弦很短时（相邻两个拐点挤在一起）按比例放宽，避免把真实短边上的顶点误删。
+      if (deviation > Math.min(tolerance, chord * 0.2)) continue
+      if (deviation < bestDeviation) {
+        bestDeviation = deviation
+        bestPosition = position
+      }
+    }
+    if (bestPosition < 0) break
+    result = result.filter((_, position) => position !== bestPosition)
+  }
+  return result
+}
+
 /** 由环上的拐角构造首尾相接的边，供环校验复用。 */
 function buildRingSegments(loop: readonly HanddrawPoint[], indices: readonly number[], strokeIndex: number): BondLine[] {
   const segments: BondLine[] = []
@@ -515,6 +598,7 @@ function analyzeClosedStroke(
     corners = corners.filter(corner => corner.arc < clustered.repeatStartArc! - 1e-6)
   }
   if (corners.length < 3) return { kind: 'open' }
+  corners = mergeCollinearCorners(ringLoop, corners, scale, settings)
   if (corners.length > 8) {
     warnings.add(WARNING_RING_DISCARD)
     return { kind: 'invalid' }
@@ -550,6 +634,10 @@ function analyzeClosedStroke(
     corners = [...corners, { index: inserted.index >= loop.length - 1 ? 0 : inserted.index, arc: inserted.arc, strength: inserted.strength }]
       .sort((left, right) => left.arc - right.arc)
   }
+
+  // 手抖会在直边上制造假拐点：去掉某个拐点后，两侧路径仍紧贴新弦，说明它只是手抖，合并掉。
+  // 每次去掉偏差最小的一个，直到剩下的拐点都“撑起”了明显的折角（去掉真拐角时偏差约为边长的 0.4 倍以上）。
+  corners = mergeCollinearCorners(ringLoop, corners, scale, settings)
 
   // 顶点太近（同一个拐角被拆成两个）时合并较弱的一个；真实短边不在这里修。
   const minimumEdge = settings.minBondLength
@@ -918,15 +1006,21 @@ export function extractInk(strokes: readonly HanddrawStroke[], settings: Setting
   const effective = effectiveSettings(settings)
   const scale = estimateScale(strokes, effective)
   const segments: BondLine[] = []
+  const ringStrokes: number[] = []
   for (let index = 0; index < strokes.length; index += 1) {
-    segments.push(...analyzeStroke(strokes[index], index, scale, effective, warnings))
+    const lines = analyzeStroke(strokes[index], index, scale, effective, warnings)
+    // 一笔闭合环的边首尾精确相接（由拐点构造）；边长接近键长时记下来供文字识别排除，
+    // 避免整笔环被当成字母或与内圈聚成一团。边明显偏短的小闭合笔迹（潦草内圈）仍交给文字识别判断。
+    if (lines.length >= 3 && distance(lines[0].a, lines[lines.length - 1].b) < 1e-6
+      && lines.reduce((total, line) => total + lineLength(line), 0) / lines.length >= scale * RING_STROKE_EDGE_FACTOR) ringStrokes.push(index)
+    segments.push(...lines)
     if (segments.length > MAX_SEGMENTS) {
       // 与 handdraw.ts 的 LIMIT_EXCEEDED 检查呼应：这里不静默截断，只给出提示。
       warnings.add(WARNING_LIMIT)
       break
     }
   }
-  return { scale, segments, warnings: [...warnings] }
+  return { scale, segments, warnings: [...warnings], ringStrokes }
 }
 
 export interface BondMergeResult {
@@ -1071,8 +1165,9 @@ export function mergeBondLinesWithWarnings(
   const lines = cleanLines(segments)
   const warnings = new Set<string>()
   if (!lines.length) return { bonds: [], warnings: [] }
-  // 重画判定距离：略小于“双键最小间距”，保证间距 0.1*scale 左右的手绘双键仍能被当成双键。
-  const duplicateDistance = Math.max(2, Math.min(effective.parallelDistance * 0.5, safeScale * 0.09))
+  // 重画判定距离：略小于“双键最小间距”。入口已把绘画缩放到标准键长，
+  // 窄双键（间距约 7%～9% 键长）也要能和同一位置的重画（间距 1%～3%）区分开。
+  const duplicateDistance = Math.max(1.5, Math.min(effective.parallelDistance * 0.5, safeScale * 0.055))
   const minimumSpacing = Math.max(duplicateDistance * 1.15, safeScale * MERGE_MIN_SPACING_FACTOR)
   const maximumSpacing = maximumMergeSpacing(safeScale, effective)
 
@@ -1093,21 +1188,29 @@ export function mergeBondLinesWithWarnings(
   // 2. 以最长线为种子，把 band 宽度内的平行线聚成一根多重键。
   const consumed = new Set<LineGroup>()
   const bonds: { bond: MergedBond; key: number }[] = []
-  for (const seed of groups) {
+  // 种子按长度从长到短：三键的中线通常最长，从它出发两侧的短线都在间距范围内；
+  // 若按书写顺序从外侧短线起步，另一侧的短线会因间距翻倍而漏并（结果与笔顺有关）。
+  const seeds = groups.slice().sort((left, right) => right.representative.length - left.representative.length
+    || left.representative.index - right.representative.index)
+  const compatibleWith = (member: WorkingLine, candidate: WorkingLine): boolean =>
+    isMultiBondPair(member, candidate, minimumSpacing, maximumSpacing)
+    || isFoldBackPair(member, candidate, safeScale, minimumSpacing, maximumSpacing)
+  for (const seed of seeds) {
     if (consumed.has(seed)) continue
     consumed.add(seed)
     const distinct: LineGroup[] = [seed]
-    // 只与“种子线”和“最新加入的线”比较：既支持沿相邻线传递分组
-    // （四条间距略大的手绘平行线仍能收成三键），又保证 O(n²) 的复杂度。
-    const compatibleWith = (member: WorkingLine, candidate: WorkingLine): boolean =>
-      isMultiBondPair(member, candidate, minimumSpacing, maximumSpacing)
-      || isFoldBackPair(member, candidate, safeScale, minimumSpacing, maximumSpacing)
-    for (const candidate of groups) {
-      if (consumed.has(candidate)) continue
-      const last = representativeLine(distinct[distinct.length - 1])
-      if (!compatibleWith(seed.representative, candidate.representative) && !compatibleWith(last, candidate.representative)) continue
-      consumed.add(candidate)
-      distinct.push(candidate)
+    // 与组内任一成员相容即可加入（支持沿相邻线传递：四条间距略大的平行线仍能收成三键）；
+    // 反复扫描直到没有新成员，保证结果与线段输入顺序无关。
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const candidate of groups) {
+        if (consumed.has(candidate)) continue
+        if (!distinct.some(member => compatibleWith(representativeLine(member), candidate.representative))) continue
+        consumed.add(candidate)
+        distinct.push(candidate)
+        grew = true
+      }
     }
     if (distinct.length > 3) warnings.add(WARNING_TOO_MANY_PARALLEL)
     const bond = buildGroup(distinct)
